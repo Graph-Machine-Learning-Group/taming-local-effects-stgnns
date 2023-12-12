@@ -1,0 +1,11 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: tag_aniso
+  hparams:
+    hidden_size: 16
+    add_embedding_before: ['encoding', 'decoding']
+    use_local_weights: null # ['encoder', 'decoder']
+    n_layers: 1
+    activation: 'elu'

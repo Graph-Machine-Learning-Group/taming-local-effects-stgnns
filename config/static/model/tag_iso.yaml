@@ -1,0 +1,19 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: tag_iso
+  hparams:
+    hidden_size: 16
+    add_embedding_before: ['encoding', 'decoding']
+    use_local_weights: null # ['encoder', 'decoder']
+    root_weight: True
+    n_layers: 1
+    norm: 'asym'
+    cached: True
+    activation: 'elu'
+
+dataset:
+  connectivity:
+    layout: csr
+    include_self: ${not:${model.hparams.root_weight}}

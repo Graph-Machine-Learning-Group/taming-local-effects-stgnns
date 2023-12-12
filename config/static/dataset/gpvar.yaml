@@ -1,0 +1,30 @@
+# @package _global_
+
+#### Dataset params ###########################################################
+dataset:
+  name: gpvar
+  splitting:
+    val_len: 0.1
+    test_len: 0.2
+  connectivity:
+    layout: edge_index
+    include_weights: False
+    include_self: False
+  hparams:
+    num_communities: 20
+    num_steps: 30000
+    global_params: [ [ 2.5, 1.0 ],
+                     [ -2.0, 3.0 ],
+                     [ -0.5, 0.0 ] ]
+    sigma_noise: 0.4
+    seed: 42
+    share_community_weights: False
+    save_to: gpvar_${dataset.hparams.sigma_noise}_${dataset.hparams.seed}
+#    load_from: gpvar_${dataset.hparams.sigma_noise}_${dataset.hparams.seed}
+
+#### Windowing params #########################################################
+window: 6
+horizon: 1
+stride: 1
+
+scale_target: False

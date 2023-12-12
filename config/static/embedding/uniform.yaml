@@ -1,0 +1,3 @@
+method: 'uniform'
+emb_size: 8
+trainable: True

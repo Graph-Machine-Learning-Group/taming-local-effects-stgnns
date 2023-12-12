@@ -1,0 +1,12 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: fcrnn
+  hparams:
+    hidden_size: 32
+    n_layers: 1
+    cell: 'gru'
+    activation: 'elu'
+
+mask_as_exog: False

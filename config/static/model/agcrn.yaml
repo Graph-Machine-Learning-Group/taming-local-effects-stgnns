@@ -1,0 +1,11 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: agcrn
+  hparams:
+    hidden_size: 64
+    emb_size: 10
+    n_layers: 1
+    add_embedding_before: null # ['encoding', 'decoding']
+    use_local_weights: null

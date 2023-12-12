@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - ../embedding: none
+
+#### Model params #############################################################
+model:
+  name: rnn
+  hparams:
+    hidden_size: 32
+    n_layers: 1
+    cell: 'gru'
+    activation: 'elu'
+    add_embedding_before: 'encoding'
+    use_local_weights: null

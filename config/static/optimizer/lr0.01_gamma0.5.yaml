@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - adam
+  - _self_
+
+optimizer:
+  hparams:
+    lr: 0.01
+
+lr_scheduler:
+  name: MultiStepLR
+  hparams:
+    gamma: 0.5
+    milestones: [ 50, 100, 150 ]

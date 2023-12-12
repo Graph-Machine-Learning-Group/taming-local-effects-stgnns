@@ -1,0 +1,13 @@
+defaults:
+  - benchmarks
+  - override dataset: pems
+  - _self_
+
+#### Experiment params ########################################################
+hydra:
+  sweep:
+    dir: logs/tab_pems/${now:%Y-%m-%d-%H-%M-%S}
+
+model:
+  hparams:
+    add_backward: True

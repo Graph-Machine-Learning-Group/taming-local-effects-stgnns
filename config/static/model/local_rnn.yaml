@@ -1,0 +1,15 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: local_rnn
+  hparams:
+    hidden_size: 32
+    rnn_layers: 1
+    ff_layers: 2
+    ff_size: ${model.hparams.hidden_size}
+    cat_states_layers: False
+    share_weights: null
+    cell: 'gru'
+
+scale_axis: node

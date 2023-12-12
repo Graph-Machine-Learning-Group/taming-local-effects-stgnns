@@ -1,0 +1,21 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: ttg_iso
+  hparams:
+    hidden_size: 16
+    add_embedding_before: ['encoding', 'decoding']
+    use_local_weights: null # ['encoder', 'decoder']
+    root_weight: True
+    time_layers: 1
+    graph_layers: 2
+    add_backward: False
+    norm: 'asym'
+    cached: True
+    activation: 'elu'
+
+dataset:
+  connectivity:
+    layout: csr
+    include_self: ${not:${model.hparams.root_weight}}

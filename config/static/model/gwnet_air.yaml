@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - gwnet
+
+#### Model params #############################################################
+model:
+  name: gwnet
+  hparams:
+    n_layers: 6
+    temporal_kernel_size: 3
+    spatial_kernel_size: 2
+    dilation: 2
+    dilation_mod: 3
+
+batch_size: 32

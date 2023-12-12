@@ -1,0 +1,22 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: gwnet
+  hparams:
+    hidden_size: 32
+    ff_size: 256
+    n_layers: 8
+    dropout: 0.3
+    temporal_kernel_size: 2
+    spatial_kernel_size: 2
+    dilation: 2
+    dilation_mod: 2
+    norm: batch
+    learned_adjacency: True
+    add_embedding_before: null # ['encoding', 'decoding']
+    use_local_weights: null
+
+dataset:
+  connectivity:
+    layout: csr

@@ -1,0 +1,11 @@
+method: 'clusterized'
+emb_size: 32
+n_clusters: 5
+trainable: True
+estimator: 'gt'
+learned_assignments: True
+separation_loss: False
+sep_eps: 1.
+tau: 1.
+temp_annealing: True
+temp_decay_coeff: 0.97

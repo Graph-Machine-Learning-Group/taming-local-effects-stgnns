@@ -1,0 +1,21 @@
+# @package _global_
+
+#### Dataset params ###########################################################
+dataset:
+  name: cer
+  splitting:
+    val_len: 0.1
+    test_len: 0.2
+  connectivity:
+    method: correntropy
+    knn: 9
+    binary_weights: True
+    include_self: False
+    layout: edge_index
+
+#### Windowing params #########################################################
+window: 48
+horizon: 6
+stride: 1
+
+scale_target: True

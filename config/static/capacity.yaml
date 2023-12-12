@@ -1,0 +1,10 @@
+defaults:
+  - default
+  - override dataset: lgpvar
+  - override model: ttg_iso
+  - _self_
+
+hydra:
+  sweep:
+    dir: logs/capacity/${now:%Y-%m-%d-%H-%M-%S}
+    subdir: emb_${embedding.method}/window_${window}/hidden_${model.hparams.hidden_size}/${hydra.job.num}

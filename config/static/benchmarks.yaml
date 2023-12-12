@@ -1,0 +1,23 @@
+defaults:
+  - default
+  - override optimizer: lr0.003_gamma0.25
+  - override dataset: la
+  - override embedding: uniform
+  - _self_
+
+hydra:
+  sweep:
+    dir: logs/benchmarks/${now:%Y-%m-%d-%H-%M-%S}
+    subdir: ${model.name}/${dataset.name}/${hydra.job.num}
+
+train_batches: 300
+patience: 50
+batch_size: 64
+add_exogenous: True
+
+model:
+  hparams:
+    hidden_size: 64
+
+embedding:
+  emb_size: 32

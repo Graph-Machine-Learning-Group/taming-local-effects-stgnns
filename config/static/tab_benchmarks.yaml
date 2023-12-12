@@ -1,0 +1,7 @@
+defaults:
+  - benchmarks
+  - _self_
+
+hydra:
+  sweep:
+    dir: logs/tab_benchmarks/${now:%Y-%m-%d-%H-%M-%S}

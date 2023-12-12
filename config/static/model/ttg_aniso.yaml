@@ -1,0 +1,12 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: ttg_aniso
+  hparams:
+    hidden_size: 16
+    add_embedding_before: ['encoding', 'decoding']
+    use_local_weights: null # ['encoder', 'decoder']
+    time_layers: 1
+    graph_layers: 2
+    activation: 'elu'

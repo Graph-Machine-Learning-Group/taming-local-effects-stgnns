@@ -1,0 +1,18 @@
+defaults:
+  - default
+  - _self_
+
+hydra:
+  sweep:
+    dir: logs/tab_gpvar/${now:%Y-%m-%d-%H-%M-%S}
+    subdir: ${model.name}/${dataset.name}/${hydra.job.num}
+
+batch_size: 128
+add_exogenous: False
+
+model:
+  hparams:
+    hidden_size: 16
+
+embedding:
+  emb_size: 8

@@ -1,0 +1,6 @@
+defaults:
+  - benchmarks
+
+hydra:
+  sweep:
+    dir: logs/tab_traffic/${now:%Y-%m-%d-%H-%M-%S}

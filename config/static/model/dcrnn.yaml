@@ -1,0 +1,18 @@
+# @package _global_
+
+#### Model params #############################################################
+model:
+  name: dcrnn
+  hparams:
+    hidden_size: 64
+    kernel_size: 2
+    root_weight: True
+    add_backward: True
+    n_layers: 1
+    activation: 'elu'
+    add_embedding_before: null # ['encoding', 'decoding']
+    use_local_weights: null
+
+dataset:
+  connectivity:
+    layout: csr
