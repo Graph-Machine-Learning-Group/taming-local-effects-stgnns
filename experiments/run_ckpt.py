@@ -1,17 +1,26 @@
+import sys, os, glob
+
 import numpy as np
 import torch
-from omegaconf import DictConfig
+import einops
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
+import tsl
 from tsl import logger
 from tsl.data import SpatioTemporalDataset, SpatioTemporalDataModule
 from tsl.data.preprocessing import StandardScaler
 from tsl.datasets import MetrLA, PemsBay
 from tsl.datasets.pems_benchmarks import PeMS03, PeMS04, PeMS07, PeMS08
-from tsl.experiment import Experiment
+from tsl.experiment import Experiment, NeptuneLogger
 from tsl.metrics import torch_metrics
 
+sys.path.append(os.path.abspath(os.path.join(os.path.curdir, "graph_sign_test")))
+from az_analysis.stat_test import optimality_check
+from az_analysis.visualization import az_score_plot
+
+import lib
 from lib.datasets import LocalGlobalGPVARDataset, AirQuality
 from lib.nn import models, EmbeddingPredictor
 from lib.utils import find_devices, cfg_to_python
@@ -72,6 +81,30 @@ def get_dataset(dataset_cfg):
 
 
 def run_traffic(cfg: DictConfig):
+
+    if cfg.ckpt:
+        logger.info(f"loading form {cfg.ckpt}")
+        # checkpoint = os.path.abspath(args.from_checkpoint)
+        # logging_path = os.path.abspath(os.path.join("/", "/".join(checkpoint.split("/")[:-1])))
+        logging_path = os.path.abspath(cfg.ckpt)
+        checkpoint = glob.glob(os.path.join(logging_path, "epoch=*"))
+        assert len(checkpoint) == 1
+        checkpoint = checkpoint[0]
+        config_file = os.path.abspath(os.path.join(logging_path, "config.yaml"))
+        # result_file = os.path.abspath(os.path.join(logging_path, "results_.npy"))
+        
+        logger.info(f"Reading config_file: {config_file}")
+        # stored_cfg = tsl.Config.from_config_file(config_file)
+        stored_cfg = OmegaConf.load(config_file)
+        stored_cfg.ckpt = cfg.ckpt
+        stored_cfg.az_analysis = cfg.az_analysis
+        # use_mask_ = cfg.get("use_mask", True)
+        cfg = stored_cfg
+        cfg.neptune.online = False
+        # cfg.use_mask = use_mask_
+        for k, v in cfg.items():
+            tsl.logger.info(f"{k:25s}: {v}")
+
     ########################################
     # data module                          #
     ########################################
@@ -167,7 +200,36 @@ def run_traffic(cfg: DictConfig):
     # logging options                      #
     ########################################
 
-    exp_logger = TensorBoardLogger(save_dir=cfg.run.dir, name=cfg.run.name)
+    tags = cfg.get("tags", "")
+    tags = tags.split(",") if isinstance(tags, str) else list(tags)
+    tags = tags + [cfg.model.name, cfg.dataset.name, "hdtts"]
+    tags = list(set(tags))
+
+    if cfg.neptune:
+        exp_logger = NeptuneLogger(api_key=lib.config["neptune_token"],
+                                project_name=lib.config["neptune_project"],
+                                experiment_name=cfg.run.name,
+                                tags=tags,
+                                params=vars(cfg),
+                                debug=not cfg.neptune.online,
+                                upload_stdout=False,
+                                )
+        # TODO this is for a known bug in neptunes
+        # https://github.com/neptune-ai/neptune-client/issues/1702#issuecomment-2376615676
+        import logging, neptune
+        class _FilterCallback(logging.Filterer):
+            def filter(self, record: logging.LogRecord):
+                return not (
+                    record.name == "neptune"
+                    and record.getMessage().startswith(
+                        "Error occurred during asynchronous operation processing: X-coordinates (step) must be strictly increasing for series attribute"
+                    )
+                )
+        neptune.internal.operation_processors.async_operation_processor.logger.addFilter(
+            _FilterCallback()
+        )
+    else:
+        exp_logger = TensorBoardLogger(save_dir=cfg.run.dir, name=cfg.run.name)
 
     ########################################
     # training                             #
@@ -195,9 +257,9 @@ def run_traffic(cfg: DictConfig):
                       gradient_clip_val=cfg.grad_clip_val,
                       callbacks=[early_stop_callback, checkpoint_callback])
 
-    load_model_path = cfg.get('load_model_path')
-    if load_model_path is not None:
-        predictor.load_model(load_model_path)
+    # load_model_path = cfg.get('load_model_path')
+    if cfg.ckpt:
+        predictor.load_model(checkpoint)
     else:
         trainer.fit(predictor, train_dataloaders=dm.train_dataloader(),
                     val_dataloaders=dm.val_dataloader())
@@ -209,6 +271,64 @@ def run_traffic(cfg: DictConfig):
 
     predictor.freeze()
     trainer.test(predictor, dataloaders=dm.test_dataloader())
+
+    ########################################
+    # residual analysis                    #
+    ########################################
+
+    a = trainer.predict(predictor, dataloaders=dm.test_dataloader(shuffle=False))
+    out = {k: torch.cat([a_[k] for a_ in a]) for k in a[0].keys()}
+    y_hat, y, m = out["y_hat"], out["y"], out["mask"]
+
+    for f in range(y.shape[-1]):
+        for h in range(y.shape[-3]):
+            for name, metr in log_metrics.items(): # [torch_metrics.MaskedMRE(), torch_metrics.MaskedMAE(), torch_metrics.MaskedMSE()]:
+                print(f"{name}[{h},{f}]: {metr(y_hat[..., h, :, f], y[..., h, :, f], m[..., h, :, f]):.3f}", end="\t")
+            print("")
+    
+    res = einops.rearrange(y_hat - y, "b h n f -> b n (h f) ")
+    m = einops.rearrange(m, "b h n f -> b n (h f) ")
+    print(res.shape)
+
+    ei, ew = dataset.get_connectivity(layout="edge_index")
+    graph = dict(edge_index=ei, edge_weight=ew)
+    
+    logger.info(" --- all components ---------------------")
+    log_metric_ = None if not isinstance(exp_logger, NeptuneLogger) else lambda n, v: exp_logger.log_metric(metric_name=n, metric_value=v)
+    optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, 
+                     logger_msg=logger, logger_metric=log_metric_,
+                     **graph)
+    figname = f"{cfg.dataset.name}_{cfg.model.name}_{cfg.embedding.method}"
+    if cfg.az_analysis.use_mask:
+        figname += "_masked"
+    # az_score_plot(residuals=res[..., :1], mask=m[..., :1], use_mask=cfg.use_mask,
+    #               multivariate=multivariate,
+    #               savefig=figname,
+    #               node_order="fit",
+    #               **graph,
+    #               plot_window=True,
+    #               plot_spacetime_scores=True,
+    #               time_filter=10,
+    #               k_smooth_st=5,
+    #               # plot_dataset=True,
+    #               # node_set=list(range(60, 100)),
+    #               # time_set=list(range(1550, 1900)))
+    #               node_set=list(range(30, 70)),
+    #               time_set=list(range(1400, 1900)))
+    az_score_plot(residuals=res[..., :1], mask=m[..., :1], #use_mask=cfg.use_mask,
+                  **graph,
+                  savefig=os.path.join(cfg.ckpt, figname),
+                  **cfg.az_analysis)
+
+    logger.info(" --- first component --------------------")
+    optimality_check(residuals=res[..., :1], mask=m[..., :1],  
+                     logger_msg=logger, logger_metric=log_metric_,
+                     **graph)
+    
+    logger.info(" --- last component --------------------")
+    optimality_check(residuals=res[..., -1:], mask=m[..., -1:], 
+                     logger_msg=logger, logger_metric=log_metric_,
+                     **graph)
 
     exp_logger.finalize('success')
 
