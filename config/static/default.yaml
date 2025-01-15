@@ -40,10 +40,6 @@ az_analysis:
   time_filter: 10
   k_smooth_st: 5
   # plot_dataset=True,
-  # node_set=list(range(60, 100)),
-  # time_set=list(range(1550, 1900)))
-  node_set: [30, 70]
-  time_set: [1400, 1900]
   # savefig: ${dataset.name}_${model.name}_${embedding.method}_${az_analysis.use_mask}_${now:%Y-%m-%d}${now:%H-%M-%S}
 
 

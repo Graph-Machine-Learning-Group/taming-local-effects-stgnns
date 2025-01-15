@@ -1,0 +1,10 @@
+defaults:
+  - benchmarks
+
+hydra:
+  run:
+    dir: logs/az_la_missing/${model.name}/${dataset.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: logs/az_la_missing/${now:%Y-%m-%d-%H-%M-%S}
+
+tags: az_la_missing

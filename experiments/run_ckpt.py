@@ -7,23 +7,22 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
-import tsl
 from tsl import logger
 from tsl.data import SpatioTemporalDataset, SpatioTemporalDataModule
 from tsl.data.preprocessing import StandardScaler
-from tsl.datasets import MetrLA, PemsBay
+from tsl.datasets import MetrLA, PemsBay, SolarBenchmark, PvUS, Elergone
 from tsl.datasets.pems_benchmarks import PeMS03, PeMS04, PeMS07, PeMS08
 from tsl.experiment import Experiment, NeptuneLogger
 from tsl.metrics import torch_metrics
 
-sys.path.append(os.path.abspath(os.path.join(os.path.curdir, "graph_sign_test")))
-from az_analysis.stat_test import optimality_check
-from az_analysis.visualization import az_score_plot
-
-import lib
+from lib import config as lib_config
 from lib.datasets import LocalGlobalGPVARDataset, AirQuality
 from lib.nn import models, EmbeddingPredictor
 from lib.utils import find_devices, cfg_to_python
+
+sys.path.append(os.path.abspath(os.path.join(os.path.curdir, "graph_sign_test")))
+from az_analysis.stat_test import optimality_check
+from az_analysis.visualization import az_score_plot, save_az_scores
 
 
 def get_model_class(model_str):
@@ -71,39 +70,71 @@ def get_dataset(dataset_cfg):
         dataset = PeMS08()
     elif name == 'air':
         dataset = AirQuality(impute_nans=True)
+        if dataset_cfg.get("test_months", False):
+            dataset.test_months = dataset_cfg.test_months # (11,12,1,2,3,4)
     elif name == 'gpvar':
         dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams, p_max=0)
     elif name == 'lgpvar':
         dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams)
+    elif name == 'solar':
+        dataset = SolarBenchmark()
+    elif name == "pvwest":
+        dataset = PvUS(zones="west")
+    elif name == "elergone":
+        dataset = Elergone()
     else:
         raise ValueError(f"Dataset {name} not available.")
     return dataset
 
+def recreate_cfg(cfg_ckpt, cfg_az_analysis):
+    logger.info(f"loading form {cfg_ckpt}")
+    # checkpoint = os.path.abspath(args.from_checkpoint)
+    # logging_path = os.path.abspath(os.path.join("/", "/".join(checkpoint.split("/")[:-1])))
+    logging_path = os.path.abspath(cfg_ckpt)
+    model_checkpoint = glob.glob(os.path.join(logging_path, "epoch=*"))
+    assert len(model_checkpoint) == 1
+    model_checkpoint = model_checkpoint[0]
+    config_file = os.path.abspath(os.path.join(logging_path, "config.yaml"))
+    # result_file = os.path.abspath(os.path.join(logging_path, "results_.npy"))
+    
+    logger.info(f"Reading config_file: {config_file}")
+    # stored_cfg = tsl.Config.from_config_file(config_file)
+    stored_cfg = OmegaConf.load(config_file)
+    stored_cfg.ckpt = cfg_ckpt
+    stored_cfg.az_analysis = cfg_az_analysis
+    # use_mask_ = cfg.get("use_mask", True)
+    # cfg = stored_cfg
+    stored_cfg.neptune.online = False
+    # cfg.use_mask = use_mask_
+    for k, v in stored_cfg.items():
+        logger.info(f"{k:25s}: {v}")
+    return stored_cfg, model_checkpoint
 
 def run_traffic(cfg: DictConfig):
 
     if cfg.ckpt:
-        logger.info(f"loading form {cfg.ckpt}")
-        # checkpoint = os.path.abspath(args.from_checkpoint)
-        # logging_path = os.path.abspath(os.path.join("/", "/".join(checkpoint.split("/")[:-1])))
-        logging_path = os.path.abspath(cfg.ckpt)
-        checkpoint = glob.glob(os.path.join(logging_path, "epoch=*"))
-        assert len(checkpoint) == 1
-        checkpoint = checkpoint[0]
-        config_file = os.path.abspath(os.path.join(logging_path, "config.yaml"))
-        # result_file = os.path.abspath(os.path.join(logging_path, "results_.npy"))
+        cfg, model_ckpt = recreate_cfg(cfg.ckpt, cfg.az_analysis)
+        # logger.info(f"loading form {cfg.ckpt}")
+        # # checkpoint = os.path.abspath(args.from_checkpoint)
+        # # logging_path = os.path.abspath(os.path.join("/", "/".join(checkpoint.split("/")[:-1])))
+        # logging_path = os.path.abspath(cfg.ckpt)
+        # checkpoint = glob.glob(os.path.join(logging_path, "epoch=*"))
+        # assert len(checkpoint) == 1
+        # checkpoint = checkpoint[0]
+        # config_file = os.path.abspath(os.path.join(logging_path, "config.yaml"))
+        # # result_file = os.path.abspath(os.path.join(logging_path, "results_.npy"))
         
-        logger.info(f"Reading config_file: {config_file}")
-        # stored_cfg = tsl.Config.from_config_file(config_file)
-        stored_cfg = OmegaConf.load(config_file)
-        stored_cfg.ckpt = cfg.ckpt
-        stored_cfg.az_analysis = cfg.az_analysis
-        # use_mask_ = cfg.get("use_mask", True)
-        cfg = stored_cfg
-        cfg.neptune.online = False
-        # cfg.use_mask = use_mask_
-        for k, v in cfg.items():
-            tsl.logger.info(f"{k:25s}: {v}")
+        # logger.info(f"Reading config_file: {config_file}")
+        # # stored_cfg = tsl.Config.from_config_file(config_file)
+        # stored_cfg = OmegaConf.load(config_file)
+        # stored_cfg.ckpt = cfg.ckpt
+        # stored_cfg.az_analysis = cfg.az_analysis
+        # # use_mask_ = cfg.get("use_mask", True)
+        # cfg = stored_cfg
+        # cfg.neptune.online = False
+        # # cfg.use_mask = use_mask_
+        # for k, v in cfg.items():
+        #     logger.info(f"{k:25s}: {v}")
 
     ########################################
     # data module                          #
@@ -200,17 +231,20 @@ def run_traffic(cfg: DictConfig):
     # logging options                      #
     ########################################
 
-    tags = cfg.get("tags", "")
-    tags = tags.split(",") if isinstance(tags, str) else list(tags)
-    tags = tags + [cfg.model.name, cfg.dataset.name, "hdtts"]
+    if cfg.get("tags", False):
+        tags = cfg.tags
+        tags = tags.split(",") if isinstance(tags, str) else list(tags)
+    else:
+        tags = []
+    tags = tags + [cfg.model.name, cfg.dataset.name, cfg.embedding.method]
     tags = list(set(tags))
 
     if cfg.neptune:
-        exp_logger = NeptuneLogger(api_key=lib.config["neptune_token"],
-                                project_name=lib.config["neptune_project"],
+        exp_logger = NeptuneLogger(api_key=lib_config["neptune_token"],
+                                project_name=lib_config["neptune_project"],
                                 experiment_name=cfg.run.name,
                                 tags=tags,
-                                params=vars(cfg),
+                                params=OmegaConf.to_object(cfg),
                                 debug=not cfg.neptune.online,
                                 upload_stdout=False,
                                 )
@@ -258,8 +292,8 @@ def run_traffic(cfg: DictConfig):
                       callbacks=[early_stop_callback, checkpoint_callback])
 
     # load_model_path = cfg.get('load_model_path')
-    if cfg.ckpt:
-        predictor.load_model(checkpoint)
+    if cfg.get("ckpt", False):
+        predictor.load_model(model_ckpt)
     else:
         trainer.fit(predictor, train_dataloaders=dm.train_dataloader(),
                     val_dataloaders=dm.val_dataloader())
@@ -292,7 +326,7 @@ def run_traffic(cfg: DictConfig):
 
     ei, ew = dataset.get_connectivity(layout="edge_index")
     graph = dict(edge_index=ei, edge_weight=ew)
-    
+
     logger.info(" --- all components ---------------------")
     log_metric_ = None if not isinstance(exp_logger, NeptuneLogger) else lambda n, v: exp_logger.log_metric(metric_name=n, metric_value=v)
     optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, 
@@ -315,10 +349,21 @@ def run_traffic(cfg: DictConfig):
     #               # time_set=list(range(1550, 1900)))
     #               node_set=list(range(30, 70)),
     #               time_set=list(range(1400, 1900)))
-    az_score_plot(residuals=res[..., :1], mask=m[..., :1], #use_mask=cfg.use_mask,
-                  **graph,
-                  savefig=os.path.join(cfg.ckpt, figname),
-                  **cfg.az_analysis)
+    # az_score_plot(residuals=res[..., :1], mask=m[..., :1], #use_mask=cfg.use_mask,
+    #               **graph,
+    #               savefig=os.path.join(cfg.ckpt if cfg.ckpt else cfg.run.dir, figname),
+    #               **cfg.az_analysis)
+
+    save_az_scores(
+        residuals=res, mask=m, **graph, **cfg.az_analysis,
+        # use_mask=cfg.az_analysis.use_mask, multivariate=cfg.az_analysis.multivariate,
+        savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir, savefig=figname,
+        # node_set=list(range(30, 70)),
+        # time_set=list(range(1400, 1900)),
+        # figure_parameters=dict(main_grid=dict(figsize=[4.9, 3.8]))
+    )
+
+    
 
     logger.info(" --- first component --------------------")
     optimality_check(residuals=res[..., :1], mask=m[..., :1],  

@@ -55,3 +55,13 @@ The script used for the experiments in the paper is in the `experiments` folder.
 	```
 	python experiments/run_static_graph.py config=benchmarks model=ttg_iso embedding=uniform dataset=la 
 	```
+
+
+## AZ-analysis
+
+- just use run_ckpt
+```bash
+#missing data on la
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing ++tag=az_lam model=rnn,fcrnn,agcrn embedding=none dataset=la --multirun
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing ++tag=az_lam model=dcrnn,gwnet embedding=none dataset=la --multirun
+```
