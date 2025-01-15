@@ -73,8 +73,14 @@ def get_dataset(dataset_cfg):
         if dataset_cfg.get("test_months", False):
             dataset.test_months = dataset_cfg.test_months # (11,12,1,2,3,4)
     elif name == 'gpvar':
-        dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams, p_max=0)
+        if "p_max" in dataset_cfg.hparams:
+            dataset_cfg.hparams["p_max"] = 0
+            dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams)
+        else:
+            dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams, p_max=0)
     elif name == 'lgpvar':
+        dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams)
+    elif name == 'lcgpvar':
         dataset = LocalGlobalGPVARDataset(**dataset_cfg.hparams)
     elif name == 'solar':
         dataset = SolarBenchmark()
@@ -329,7 +335,7 @@ def run_traffic(cfg: DictConfig):
 
     logger.info(" --- all components ---------------------")
     log_metric_ = None if not isinstance(exp_logger, NeptuneLogger) else lambda n, v: exp_logger.log_metric(metric_name=n, metric_value=v)
-    optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, 
+    optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, remove_median=True, 
                      logger_msg=logger, logger_metric=log_metric_,
                      **graph)
     figname = f"{cfg.dataset.name}_{cfg.model.name}_{cfg.embedding.method}"
@@ -363,17 +369,15 @@ def run_traffic(cfg: DictConfig):
         # figure_parameters=dict(main_grid=dict(figsize=[4.9, 3.8]))
     )
 
+    # logger.info(" --- first component --------------------")
+    # optimality_check(residuals=res[..., :1], mask=m[..., :1], remove_median=True, 
+    #                  logger_msg=logger, logger_metric=log_metric_,
+    #                  **graph)
     
-
-    logger.info(" --- first component --------------------")
-    optimality_check(residuals=res[..., :1], mask=m[..., :1],  
-                     logger_msg=logger, logger_metric=log_metric_,
-                     **graph)
-    
-    logger.info(" --- last component --------------------")
-    optimality_check(residuals=res[..., -1:], mask=m[..., -1:], 
-                     logger_msg=logger, logger_metric=log_metric_,
-                     **graph)
+    # logger.info(" --- last component --------------------")
+    # optimality_check(residuals=res[..., -1:], mask=m[..., -1:], remove_median=True, 
+    #                  logger_msg=logger, logger_metric=log_metric_,
+    #                  **graph)
 
     exp_logger.finalize('success')
 

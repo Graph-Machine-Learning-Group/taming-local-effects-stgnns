@@ -62,6 +62,22 @@ The script used for the experiments in the paper is in the `experiments` folder.
 - just use run_ckpt
 ```bash
 #missing data on la
-CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing ++tag=az_lam model=rnn,fcrnn,agcrn embedding=none dataset=la --multirun
-CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing ++tag=az_lam model=dcrnn,gwnet embedding=none dataset=la --multirun
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,agcrn embedding=none dataset=la --multirun
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing model=dcrnn,gwnet embedding=none dataset=la --multirun
+
+python -m experiments.run_ckpt config=az_la_missing model=dcrnn,gwnet embedding=none dataset=la --multirun
+python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_la_missing/az_la_missing.yaml
+```
+
+
+to complete
+```bash
+#gpvar
+CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=gpvar --multirun
+CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=lcgpvar --multirun
+CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=lgpvar --multirun
+
+#v3
+CUDA_VISIBLE_DEVICES=2 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=gpvar,lcgpvar,lgpvar --multirun
+CUDA_VISIBLE_DEVICES=2 python -m experiments.run_ckpt config=az_gpvar model=local_rnn embedding=none dataset=gpvar,lcgpvar,lgpvar --multirun
 ```

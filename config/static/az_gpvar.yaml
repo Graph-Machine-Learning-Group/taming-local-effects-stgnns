@@ -1,0 +1,26 @@
+defaults:
+  - default
+  - _self_
+
+hydra:
+  run:
+    dir: logs/az_gpvar/${model.name}/${dataset.name}/${now:%Y-%m-%d-%H-%M-%S}
+  sweep:
+    dir: logs/az_gpvar/${now:%Y-%m-%d-%H-%M}
+
+tags: az_gpvar3
+
+batch_size: 128
+add_exogenous: False
+
+model:
+  hparams:
+    hidden_size: 16
+
+embedding:
+  emb_size: 8
+
+dataset:
+  hparams:
+    num_communities: 10
+    p_max: 4.0
