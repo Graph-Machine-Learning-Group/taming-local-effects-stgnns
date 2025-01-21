@@ -4,12 +4,15 @@
 dataset:
   name: pvwest
   splitting:
-    method: AtTimeStepSplitter
-    first_val_ts: [2006, 3, 1]
-    last_val_ts: [2006, 3, 31]
-    first_test_ts: [2006, 4, 1]
-    last_test_ts: [2006, 9, 30]
-    drop_following_steps: false
+    val_len: 0.1
+    test_len: 0.2
+  # splitting:
+  #   method: AtTimeStepSplitter
+  #   first_val_ts: [2006, 3, 1]
+  #   last_val_ts: [2006, 3, 31]
+  #   first_test_ts: [2006, 4, 1]
+  #   last_test_ts: [2006, 9, 30]
+  #   drop_following_steps: false
   connectivity:
     method: distance
     threshold: 0.1
@@ -27,4 +30,4 @@ stride: 1
 scale_target: true
 
 az_analysis:
-  downsample: 0.3
+  downsample: null

@@ -12,12 +12,15 @@ tags: az_pvwest
 
 model:
   name: ttg_iso
-horizon: 1
+# horizon: 1
 
-# add_exogenous: False #sweep
-# dataset:
-#   mask_zeros: False #sweep
+add_exogenous: false #sweep
+dataset:
+  mask_zeros: False #sweep
 
 az_analysis:
-  use_mask: true
+  use_mask: false
   plot_spacetime_scores: false
+  time_set: [0, 400]
+  node_set: [0, 40]
+  time_filter: 1
