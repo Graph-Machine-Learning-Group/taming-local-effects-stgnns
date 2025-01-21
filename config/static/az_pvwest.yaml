@@ -1,0 +1,23 @@
+defaults:
+  - benchmarks
+  - override embedding: none
+
+hydra:
+  run:
+    dir: logs/az_pvwest/${model.name}/${dataset.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: logs/az_pvwest/${now:%Y-%m-%d-%H-%M-%S}
+
+tags: az_pvwest
+
+model:
+  name: ttg_iso
+horizon: 1
+
+# add_exogenous: False #sweep
+# dataset:
+#   mask_zeros: False #sweep
+
+az_analysis:
+  use_mask: true
+  plot_spacetime_scores: false

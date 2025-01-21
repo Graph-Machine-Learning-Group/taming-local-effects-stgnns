@@ -62,10 +62,7 @@ The script used for the experiments in the paper is in the `experiments` folder.
 - just use run_ckpt
 ```bash
 #missing data on la
-CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,agcrn embedding=none dataset=la --multirun
-CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing model=dcrnn,gwnet embedding=none dataset=la --multirun
-
-python -m experiments.run_ckpt config=az_la_missing model=dcrnn,gwnet embedding=none dataset=la --multirun
+python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,gwnet,dcrnn,agcrn embedding=none dataset=la --multirun
 python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_la_missing/az_la_missing.yaml
 ```
 
@@ -77,7 +74,26 @@ CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_gpvar model=rnn,
 CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=lcgpvar --multirun
 CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=lgpvar --multirun
 
-#v3
+#gpvar v3
 CUDA_VISIBLE_DEVICES=2 python -m experiments.run_ckpt config=az_gpvar model=rnn,ttg_iso embedding=none,uniform dataset=gpvar,lcgpvar,lgpvar --multirun
 CUDA_VISIBLE_DEVICES=2 python -m experiments.run_ckpt config=az_gpvar model=local_rnn embedding=none dataset=gpvar,lcgpvar,lgpvar --multirun
+
+
+#real
+CUDA_VISIBLE_DEVICES=3 python -m experiments.run_ckpt config=benchmark ++tag=az-real-jan25 model=rnn,ttg_iso,dcrnn,agcrn,gwnet embedding=none dataset=bay,air,elergone,pvwest --multirun
+#split
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=benchmarks ++tags=az-real-jan25 embedding=none dataset=bay,air,elergone,pvwest model=rnn,ttg_iso --multirun
+CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=benchmarks ++tags=az-real-jan25 embedding=none dataset=bay,air,elergone,pvwest model=dcrnn --multirun
+CUDA_VISIBLE_DEVICES=2 python -m experiments.run_ckpt config=benchmarks ++tags=az-real-jan25 embedding=none dataset=bay,air,elergone,pvwest model=agcrn --multirun
+CUDA_VISIBLE_DEVICES=3 python -m experiments.run_ckpt config=benchmarks ++tags=az-real-jan25 embedding=none dataset=bay,air,elergone,pvwest model=gwnet --multirun
+
+
+#pvwest
+CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest add_exogenous=false dataset.hparams.mask_zeros=false az_analysis.use_mask=false
+CUDA_VISIBLE_DEVICES=2 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest add_exogenous=true dataset.hparams.mask_zeros=false az_analysis.use_mask=false
+CUDA_VISIBLE_DEVICES=3 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest add_exogenous=true dataset.hparams.mask_zeros=true az_analysis.use_mask=false
+CUDA_VISIBLE_DEVICES=3 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest add_exogenous=true dataset.hparams.mask_zeros=true az_analysis.use_mask=true
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest add_exogenous=false dataset.hparams.mask_zeros=true az_analysis.use_mask=true
+#pvwest multirun
+CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest add_exogenous=true,false dataset.hparams.mask_zeros=true,false scale_target=true,false --multirun
 ```

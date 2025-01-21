@@ -8,3 +8,9 @@ hydra:
     dir: logs/az_la_missing/${now:%Y-%m-%d-%H-%M-%S}
 
 tags: az_la_missing
+
+az_analysis:
+  use_mask: false
+  node_order: fit  
+  k_smooth_st: 5
+  plot_spacetime_scores: true

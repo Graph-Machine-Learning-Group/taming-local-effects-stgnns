@@ -72,6 +72,9 @@ def get_dataset(dataset_cfg):
         dataset = AirQuality(impute_nans=True)
         if dataset_cfg.get("test_months", False):
             dataset.test_months = dataset_cfg.test_months # (11,12,1,2,3,4)
+            data_ = np.ma.array(dataset.target.to_numpy(), mask=dataset.mask[..., 0])
+            for i in range(0, data_.shape[0], data_.shape[0]//200):
+                print(f"{int(5 + i/data_.shape[0]*12)%12}\t{data_[i:i+50].mean():.1f}\t{data_[i:i+50].std():.1f}")
     elif name == 'gpvar':
         if "p_max" in dataset_cfg.hparams:
             dataset_cfg.hparams["p_max"] = 0
@@ -85,7 +88,11 @@ def get_dataset(dataset_cfg):
     elif name == 'solar':
         dataset = SolarBenchmark()
     elif name == "pvwest":
-        dataset = PvUS(zones="west")
+        dataset = PvUS(**dataset_cfg.hparams)
+        data_ = dataset.target.to_numpy()
+        step_ = data_.shape[0]//48
+        for i in range(0, data_.shape[0], step_):
+            print(f"{int(1 + i/data_.shape[0]*12)%12}\t{data_[i:i+step_].mean():.1f}\t{data_[i:i+step_].std():.1f}")
     elif name == "elergone":
         dataset = Elergone()
     else:
@@ -318,24 +325,49 @@ def run_traffic(cfg: DictConfig):
 
     a = trainer.predict(predictor, dataloaders=dm.test_dataloader(shuffle=False))
     out = {k: torch.cat([a_[k] for a_ in a]) for k in a[0].keys()}
-    y_hat, y, m = out["y_hat"], out["y"], out["mask"]
+    y_hat, y, m = out["y_hat"], out["y"], out.get("mask", None)
 
     for f in range(y.shape[-1]):
         for h in range(y.shape[-3]):
             for name, metr in log_metrics.items(): # [torch_metrics.MaskedMRE(), torch_metrics.MaskedMAE(), torch_metrics.MaskedMSE()]:
-                print(f"{name}[{h},{f}]: {metr(y_hat[..., h, :, f], y[..., h, :, f], m[..., h, :, f]):.3f}", end="\t")
+                print(f"{name}[{h},{f}]: {metr(y_hat[..., h, :, f], y[..., h, :, f], None if m is None else m[..., h, :, f]):.3f}", end="\t")
             print("")
     
     res = einops.rearrange(y_hat - y, "b h n f -> b n (h f) ")
-    m = einops.rearrange(m, "b h n f -> b n (h f) ")
-    print(res.shape)
+    if m is not None:
+        m = einops.rearrange(m, "b h n f -> b n (h f) ")
+
+    print("residuals shape:", res.shape)
+    max_ts = 2000
+    if res.shape[0] > max_ts:
+        res = torch.cat([res[:max_ts//2], res[-max_ts//2:]], axis=0)
+        if m is not None:
+            m = torch.cat([m[:max_ts//2], m[-max_ts//2:]], axis=0)
+
+    """
+    T_, N_ = 400, 10
+
+    # plt.plot(y[:T_, 0, N_, 0], label="y")
+    # plt.plot(y_hat[:T_, 0, N_, 0], label="y_hat")
+    # plt.plot(res[:T_, N_, 0], label="res")
+
+    for n_ in range(4):
+        plt.plot(res[:T_, n_, 0], label=f"Node {n_}", color=plt.cm.Set1.colors[n_])
+        # plt.plot(y[:T_, 0, n_, 0], label=f"Node {n_}", color=plt.cm.Set1.colors[n_], linestyle="dashed")
+        # plt.plot(y[:T_, 0, n_, 0], label=f"Node {n_}", color=plt.cm.Set1.colors[n_], linestyle="dotted")
+        
+    plt.legend()
+    plt.grid()
+    plt.savefig("tmp2.pdf")
+    plt.close()
+    """
 
     ei, ew = dataset.get_connectivity(layout="edge_index")
     graph = dict(edge_index=ei, edge_weight=ew)
 
     logger.info(" --- all components ---------------------")
     log_metric_ = None if not isinstance(exp_logger, NeptuneLogger) else lambda n, v: exp_logger.log_metric(metric_name=n, metric_value=v)
-    optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, remove_median=True, 
+    optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, downsample=cfg.az_analysis.downsample, remove_median=True, 
                      logger_msg=logger, logger_metric=log_metric_,
                      **graph)
     figname = f"{cfg.dataset.name}_{cfg.model.name}_{cfg.embedding.method}"
