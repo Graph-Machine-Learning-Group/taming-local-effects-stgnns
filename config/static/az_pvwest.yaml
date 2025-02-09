@@ -1,6 +1,7 @@
 defaults:
   - benchmarks
   - override embedding: none
+  - override model: agcrn
 
 hydra:
   run:
@@ -10,13 +11,10 @@ hydra:
 
 tags: az_pvwest
 
-model:
-  name: ttg_iso
-# horizon: 1
-
-add_exogenous: false #sweep
+add_exogenous: false
 dataset:
-  mask_zeros: False #sweep
+  hparams:
+    mask_zeros: false
 
 az_analysis:
   use_mask: false

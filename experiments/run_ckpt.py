@@ -336,14 +336,21 @@ def run_traffic(cfg: DictConfig):
     res = einops.rearrange(y_hat - y, "b h n f -> b n (h f) ")
     if m is not None:
         m = einops.rearrange(m, "b h n f -> b n (h f) ")
+    if cfg.dataset.name == "pvwest":
+        time_index = dm.torch_dataset.index[dm.test_slice.numpy()[cfg.window:-cfg.horizon+1]]
+    else:
+        time_index = None
 
+ 
     print("residuals shape:", res.shape)
-    max_ts = 2000
-    if res.shape[0] > max_ts:
-        res = torch.cat([res[:max_ts//2], res[-max_ts//2:]], axis=0)
-        if m is not None:
-            m = torch.cat([m[:max_ts//2], m[-max_ts//2:]], axis=0)
-
+    # max_ts = 2000
+    # if res.shape[0] > max_ts:
+    #     res = torch.cat([res[:max_ts//2], res[-max_ts//2:]], axis=0)
+    #     if m is not None:
+    #         m = torch.cat([m[:max_ts//2], m[-max_ts//2:]], axis=0)
+    #     if time_index is not None:
+    #         time_index = time_index[:max_ts//2].union(time_index[-max_ts//2:])
+ 
     """
     T_, N_ = 400, 10
 
@@ -367,9 +374,9 @@ def run_traffic(cfg: DictConfig):
 
     logger.info(" --- all components ---------------------")
     log_metric_ = None if not isinstance(exp_logger, NeptuneLogger) else lambda n, v: exp_logger.log_metric(metric_name=n, metric_value=v)
-    optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, downsample=cfg.az_analysis.downsample, remove_median=True, 
-                     logger_msg=logger, logger_metric=log_metric_,
-                     **graph)
+    # optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, downsample=cfg.az_analysis.downsample, remove_median=True, 
+    #                  logger_msg=logger, logger_metric=log_metric_,
+    #                  **graph)
     figname = f"{cfg.dataset.name}_{cfg.model.name}_{cfg.embedding.method}"
     if cfg.az_analysis.use_mask:
         figname += "_masked"
@@ -392,14 +399,18 @@ def run_traffic(cfg: DictConfig):
     #               savefig=os.path.join(cfg.ckpt if cfg.ckpt else cfg.run.dir, figname),
     #               **cfg.az_analysis)
 
-    save_az_scores(
+    az_scores = save_az_scores(
         residuals=res, mask=m, **graph, **cfg.az_analysis,
         # use_mask=cfg.az_analysis.use_mask, multivariate=cfg.az_analysis.multivariate,
         savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir, savefig=figname,
+        time_index=time_index,
         # node_set=list(range(30, 70)),
         # time_set=list(range(1400, 1900)),
         # figure_parameters=dict(main_grid=dict(figsize=[4.9, 3.8]))
     )
+    log_metric_("residuals/az-test-stat[T]", az_scores["glob_0.0"])
+    log_metric_("residuals/az-test-stat[ST]", az_scores["glob_0.5"])
+    log_metric_("residuals/az-test-stat[S]", az_scores["glob_1.0"])
 
     # logger.info(" --- first component --------------------")
     # optimality_check(residuals=res[..., :1], mask=m[..., :1], remove_median=True, 

@@ -1,0 +1,19 @@
+output:
+  dir: logs/az_la_missing/
+scorefile: scores_nomask.npz
+scores: [0.5]
+plot_params:
+  time_plot:
+    figsize: [6, 3]
+    # legend: 
+    #   loc: 'lower center'
+    #   bbox_to_anchor: [0.5, 1.05]
+    #   # fancybox: True 
+    #   # shadow: True 
+    #   ncol: 3
+models:
+  RNN: logs/az_la_missing/2025-01-15-10-40-30/rnn/la/0/
+  FCRNN: logs/az_la_missing/2025-01-15-10-40-30/fcrnn/la/1/
+  GraphWaveNet: logs/az_la_missing/2025-01-15-10-40-48/gwnet/la/1/
+  DCRNN: logs/az_la_missing/2025-01-15-10-40-48/dcrnn/la/0/
+  AGCRN: logs/az_la_missing/2025-01-15-10-40-30/agcrn/la/2/

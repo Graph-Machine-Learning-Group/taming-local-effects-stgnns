@@ -64,6 +64,10 @@ The script used for the experiments in the paper is in the `experiments` folder.
 #missing data on la
 python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,gwnet,dcrnn,agcrn embedding=none dataset=la --multirun
 python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_la_missing/az_la_missing.yaml
+
+#pvwest night time
+python -m experiments.run_ckpt config=az_pvwest dataset=pvwest 
+python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_pvwes
 ```
 
 
