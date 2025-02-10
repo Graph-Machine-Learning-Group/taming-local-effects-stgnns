@@ -18,6 +18,9 @@ dataset:
     threshold: 0.1
     include_self: False
     layout: edge_index
+    theta: 150
+    knn: 8
+    force_symmetric: True
   hparams:
     mask_zeros: false
     zones: west
@@ -28,6 +31,3 @@ horizon: 6
 stride: 1
 
 scale_target: true
-
-az_analysis:
-  downsample: null

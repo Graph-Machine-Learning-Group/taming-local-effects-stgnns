@@ -2,6 +2,7 @@ defaults:
   - benchmarks
   - override embedding: none
   - override model: agcrn
+  - override dataset: pvwest
 
 hydra:
   run:
@@ -19,6 +20,8 @@ dataset:
 az_analysis:
   use_mask: false
   plot_spacetime_scores: false
+  # node_order: fit
   time_set: [0, 400]
-  node_set: [0, 40]
+  # node_set: [0, 4]
+  feat_set: [0, 2, 5]
   time_filter: 1

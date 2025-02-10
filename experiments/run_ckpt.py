@@ -398,12 +398,30 @@ def run_traffic(cfg: DictConfig):
     #               **graph,
     #               savefig=os.path.join(cfg.ckpt if cfg.ckpt else cfg.run.dir, figname),
     #               **cfg.az_analysis)
+    adjusted_scores = cfg.az_analysis.get("adjusted_scores", True)
+    if adjusted_scores:
+        OmegaConf.update(cfg, "az_analysis.adjusted_scores", True, force_add=True)
+        az_scores = save_az_scores(
+            residuals=res, mask=m, **graph, **cfg.az_analysis,
+            # use_mask=cfg.az_analysis.use_mask, multivariate=cfg.az_analysis.multivariate,
+            savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir, savefig=figname + "_adjusted",
+            time_index=time_index,
+            log=logger.info,
+            # node_set=list(range(30, 70)),
+            # time_set=list(range(1400, 1900)),
+            # figure_parameters=dict(main_grid=dict(figsize=[4.9, 3.8]))
+        )
+        log_metric_("residuals/az-test-stat[T]-adj", az_scores["glob_0.0"])
+        log_metric_("residuals/az-test-stat[ST]-adj", az_scores["glob_0.5"])
+        log_metric_("residuals/az-test-stat[S]-adj", az_scores["glob_1.0"])
 
+    OmegaConf.update(cfg, "az_analysis.adjusted_scores", False, force_add=True)
     az_scores = save_az_scores(
         residuals=res, mask=m, **graph, **cfg.az_analysis,
         # use_mask=cfg.az_analysis.use_mask, multivariate=cfg.az_analysis.multivariate,
         savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir, savefig=figname,
         time_index=time_index,
+        log=logger.info,
         # node_set=list(range(30, 70)),
         # time_set=list(range(1400, 1900)),
         # figure_parameters=dict(main_grid=dict(figsize=[4.9, 3.8]))

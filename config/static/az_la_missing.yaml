@@ -1,5 +1,6 @@
 defaults:
   - benchmarks
+  - override dataset: la
 
 hydra:
   run:
@@ -16,3 +17,4 @@ az_analysis:
   plot_spacetime_scores: true
   node_set: [30, 70]
   time_set: [1400, 1900]
+  feat_set: [0, 3, 7, 11]
