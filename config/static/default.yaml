@@ -39,7 +39,7 @@ az_analysis:
   plot_spacetime_scores: false
   time_filter: 10
   k_smooth_st: 1
-  downsample: 0.3
+  # downsample: 0.3
   # plot_dataset=True,
   # savefig: ${dataset.name}_${model.name}_${embedding.method}_${az_analysis.use_mask}_${now:%Y-%m-%d}${now:%H-%M-%S}
 

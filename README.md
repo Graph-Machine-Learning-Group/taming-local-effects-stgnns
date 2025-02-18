@@ -67,7 +67,7 @@ python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_la_missing/az_la_mis
 
 #pvwest night time
 python -m experiments.run_ckpt config=az_pvwest dataset=pvwest 
-python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_pvwes
+python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_pvwest/az_pvwest.yaml
 ```
 
 

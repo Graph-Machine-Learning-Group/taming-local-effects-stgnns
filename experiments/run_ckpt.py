@@ -22,7 +22,7 @@ from lib.utils import find_devices, cfg_to_python
 
 sys.path.append(os.path.abspath(os.path.join(os.path.curdir, "graph_sign_test")))
 from az_analysis.stat_test import optimality_check
-from az_analysis.visualization import az_score_plot, save_az_scores
+from az_analysis.visualization import az_score_plot, save_az_scores, AZ_COLORS
 
 
 def get_model_class(model_str):
@@ -114,7 +114,7 @@ def recreate_cfg(cfg_ckpt, cfg_az_analysis):
     # stored_cfg = tsl.Config.from_config_file(config_file)
     stored_cfg = OmegaConf.load(config_file)
     stored_cfg.ckpt = cfg_ckpt
-    stored_cfg.az_analysis = cfg_az_analysis
+    # stored_cfg.az_analysis = cfg_az_analysis
     # use_mask_ = cfg.get("use_mask", True)
     # cfg = stored_cfg
     stored_cfg.neptune.online = False
@@ -337,7 +337,7 @@ def run_traffic(cfg: DictConfig):
     if m is not None:
         m = einops.rearrange(m, "b h n f -> b n (h f) ")
     if cfg.dataset.name == "pvwest":
-        time_index = dm.torch_dataset.index[dm.test_slice.numpy()[cfg.window:-cfg.horizon+1]]
+        time_index = dm.torch_dataset.index[dm.test_slice.numpy()[cfg.window:dm.test_slice.numpy().shape[0]-cfg.horizon+1]]
     else:
         time_index = None
 
@@ -366,6 +366,20 @@ def run_traffic(cfg: DictConfig):
     plt.legend()
     plt.grid()
     plt.savefig("tmp2.pdf")
+    plt.close()
+
+
+    T_, N_ = 400, 10
+    plt.figure(figsize=[8, 3])
+    for f_ in [0, 2, 5]:
+        plt.plot(time_index[:T_], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
+    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+    plt.gca().tick_params(axis='x', labelrotation=90)
+    plt.gca().set_xticks(time_index[23:T_:24])
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.savefig("tmp3.pdf")
     plt.close()
     """
 
@@ -398,28 +412,29 @@ def run_traffic(cfg: DictConfig):
     #               **graph,
     #               savefig=os.path.join(cfg.ckpt if cfg.ckpt else cfg.run.dir, figname),
     #               **cfg.az_analysis)
+    savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir
     adjusted_scores = cfg.az_analysis.get("adjusted_scores", True)
     if adjusted_scores:
         OmegaConf.update(cfg, "az_analysis.adjusted_scores", True, force_add=True)
-        az_scores = save_az_scores(
+        az_scores_adj = save_az_scores(
             residuals=res, mask=m, **graph, **cfg.az_analysis,
             # use_mask=cfg.az_analysis.use_mask, multivariate=cfg.az_analysis.multivariate,
-            savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir, savefig=figname + "_adjusted",
+            savepath=savepath, savefig=figname + "_adjusted",
             time_index=time_index,
             log=logger.info,
             # node_set=list(range(30, 70)),
             # time_set=list(range(1400, 1900)),
             # figure_parameters=dict(main_grid=dict(figsize=[4.9, 3.8]))
         )
-        log_metric_("residuals/az-test-stat[T]-adj", az_scores["glob_0.0"])
-        log_metric_("residuals/az-test-stat[ST]-adj", az_scores["glob_0.5"])
-        log_metric_("residuals/az-test-stat[S]-adj", az_scores["glob_1.0"])
+        log_metric_("residuals/az-test-stat[T]-adj", az_scores_adj["glob_0.0"])
+        log_metric_("residuals/az-test-stat[ST]-adj", az_scores_adj["glob_0.5"])
+        log_metric_("residuals/az-test-stat[S]-adj", az_scores_adj["glob_1.0"])
 
     OmegaConf.update(cfg, "az_analysis.adjusted_scores", False, force_add=True)
     az_scores = save_az_scores(
         residuals=res, mask=m, **graph, **cfg.az_analysis,
         # use_mask=cfg.az_analysis.use_mask, multivariate=cfg.az_analysis.multivariate,
-        savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir, savefig=figname,
+        savepath=savepath, savefig=figname,
         time_index=time_index,
         log=logger.info,
         # node_set=list(range(30, 70)),
@@ -429,6 +444,126 @@ def run_traffic(cfg: DictConfig):
     log_metric_("residuals/az-test-stat[T]", az_scores["glob_0.0"])
     log_metric_("residuals/az-test-stat[ST]", az_scores["glob_0.5"])
     log_metric_("residuals/az-test-stat[S]", az_scores["glob_1.0"])
+
+    if cfg.dataset.name == "pvwest":
+        T_ = cfg.az_analysis.get("time_set", [0, 400])[-1]
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        night_ = torch.where((y[:T_, :, :, 0]==0).all(-1).all(-1))[0].numpy()
+        night_ = torch.where((~m[:T_]).all(-1).all(-1))[0].numpy()
+        # night_ = []
+        az_scores_adj["time_mae"][night_] = np.nan
+        az_scores_adj["time_1.0"][night_] = np.nan
+        az_scores_adj["time_0.0"][night_] = np.nan
+        az_scores_adj["time_0.5"][night_] = np.nan
+
+        plt.figure(figsize=[8, 3])
+        for f_ in [0, 2, 5]:
+            plt.plot(time_index[:T_], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
+        # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+        plt.gca().tick_params(axis='x', labelrotation=90)
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
+        plt.legend()
+        plt.grid()
+        plt.tight_layout()
+        plt.savefig(os.path.join(savepath, "tmp3_positive_res_ratio.pdf"))
+        plt.close()
+
+        # plt.figure(figsize=[8, 3])
+        # Create some mock data
+        fig, ax1 = plt.subplots(figsize=[6, 2.5])
+
+        l1 = ax1.plot(time_index[:T_], az_scores_adj["time_1.0"], label=f"Score $c_{1.0}(t)$", color=AZ_COLORS[1.0], linestyle="dashdot")
+        l0 = ax1.plot(time_index[:T_], az_scores_adj["time_0.0"], label=f"Score $c_{0.0}(t)$", color=AZ_COLORS[0.0], linestyle="dashed")
+        l5 = ax1.plot(time_index[:T_], az_scores_adj["time_0.5"], label=f"Score $c_{0.5}(t)$", color=AZ_COLORS[0.5], linestyle="solid")
+
+        # ax1.set_xlabel()
+        ax1.set_ylabel(r"Scores $c_\lambda(t)$")
+        ax1.tick_params(axis='x', labelrotation=90)
+        ax1.tick_params(axis='y', labelcolor=AZ_COLORS[0.5])        
+        ax1.xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
+        # ax1.set_ylim(bottom=0.0)
+        # plt.legend()
+        ax1.set_ylim(top=1.0)
+
+        ax2 = ax1.twinx()        
+        ax2 = ax1.twinx()  # instantiate a second Axes that shares the same x-axis
+          # instantiate a second Axes that shares the same x-axis
+        lm = ax2.plot(time_index[:T_], az_scores_adj["time_mae"], label=f"MAE", color="black", 
+                    #   linestyle="solid", linewidth=2.0, alpha=.6)
+                      linestyle="dotted")
+        ax2.set_ylim(bottom=0.0)
+        
+        # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+        ax2.set_ylabel(f"MAE")
+        ax2.tick_params(axis='y', labelcolor="black")       
+
+        lns = l1 + l5 + l0 + lm
+        labs = [l.get_label() for l in lns]
+        ax1.legend(lns, labs, loc=0)
+
+        # plt.legend()
+        plt.grid()
+        plt.tight_layout()
+        plt.savefig(os.path.join(savepath, "tmp4_scores.pdf"))
+        plt.close()
+
+        plt.figure(figsize=[8, 3])
+        # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
+        # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
+        f_ = 2
+        for i_ in range(5):
+            plt.plot(time_index[:T_], y_hat[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Set1.colors[i_])
+            plt.plot(time_index[:T_], y[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Pastel1.colors[i_], linestyle="dashed")
+
+        # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+        plt.gca().tick_params(axis='x', labelrotation=90)
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
+        plt.legend()
+        plt.grid()
+        plt.tight_layout()
+        plt.savefig(os.path.join(savepath, "tmp5_3days_forecasts.pdf"))
+        plt.close()
+
+        plt.figure(figsize=[8, 3])
+        # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
+        # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
+        f_ = 2
+        T_min, T_max = 30, 120
+        for i_ in range(8):
+            mul = 81
+            plt.plot(time_index[T_min:T_max], y_hat[T_min:T_max, f_, mul*i_, 0], label=f"y_hat[{mul*i_}]", color=plt.cm.Set1.colors[i_])
+            plt.plot(time_index[T_min:T_max], y[T_min:T_max, f_, mul*i_, 0], label=f"y[{mul*i_}]", color=plt.cm.Pastel1.colors[i_], linestyle="dashed")
+
+        # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+        plt.gca().tick_params(axis='x', labelrotation=90)
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
+        # plt.legend()
+        plt.grid()
+        plt.tight_layout()
+        plt.savefig(os.path.join(savepath, "tmp6_1day_forecast.pdf"))
+        plt.close()
+
+
+        plt.figure(figsize=[8, 3])
+        # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
+        # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
+        f_ = 2
+        T_min, T_max = 106, 130
+        T_min, T_max = 130, 180
+        for i_ in range(5):
+            q = i_ * .2 + .1
+            plt.plot(time_index[T_min:T_max], torch.quantile(res[T_min:T_max, :, f_], q, axis=1), label=f"{int(q*100)}\%", color=plt.cm.Set1.colors[i_])
+
+        # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+        plt.gca().tick_params(axis='x', labelrotation=90)
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
+        plt.legend()
+        plt.grid()
+        plt.tight_layout()
+        plt.savefig(os.path.join(savepath, "tmp7_night_residuals.pdf"))
+        plt.close()
+
 
     # logger.info(" --- first component --------------------")
     # optimality_check(residuals=res[..., :1], mask=m[..., :1], remove_median=True, 

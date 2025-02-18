@@ -12,16 +12,16 @@ hydra:
 
 tags: az_pvwest
 
-add_exogenous: false
+add_exogenous: true
 dataset:
   hparams:
-    mask_zeros: false
+    mask_zeros: true
 
 az_analysis:
   use_mask: false
   plot_spacetime_scores: false
-  # node_order: fit
+  node_order: null
   time_set: [0, 400]
-  # node_set: [0, 4]
+  # node_set: [0, 20]
   feat_set: [0, 2, 5]
   time_filter: 1

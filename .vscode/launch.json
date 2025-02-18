@@ -1,0 +1,130 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ckpt",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                // "++ckpt=logs/ttg_iso/lgpvar/2024-11-11/13-31-42",
+                // "++ckpt=logs/ttg_iso/air/2024-11-12/10-34-17",
+                // "++ckpt=logs/ttg_iso/air/2024-11-14/10-55-36",
+                // "++ckpt=logs/az_pvwest/ttg_iso/pvwest/2025-01-20/19-04-49",
+                "++ckpt=logs/az_la_missing/2025-02-12-15-47-30",
+                // "++ckpt=logs/az_pvwest/ttg_iso/pvwest/2025-02-11/10-09-33",
+                "+az_analysis.time_set=[0,500]",
+                "+az_analysis.node_set=[0,40]",
+                // "az_analysis.time_filter=1",
+                // "neptune.online=false"
+                "++tags=lollo",
+            ]
+        },
+        {
+            "name": "train",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                // "model=rnn",
+                "embedding=none", 
+                // "model.hparams.hidden_size=3",
+                // "config=az_pvwest",
+                "config=az_la_missing",
+                // "++az_analysis.node_set=[0, 4]",
+                "train_batches=10",
+                "epochs=1",
+                "++tags=debug",
+            ]
+        },
+        {
+            "name": "solar",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                "model=ttg_iso",
+                "embedding=none", 
+                // "model.hparams.hidden_size=3",
+                // "window=1"
+                "dataset=solar",
+                "epochs=2"
+            ]
+        },
+        {
+            "name": "aqi",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                "model=ttg_iso",
+                "embedding=none", 
+                "model.hparams.hidden_size=3",
+                "dataset=air",
+                "epochs=10",
+                "+dataset.test_months=[8,9,10,11,12,1,2,3]",
+                "++tags=az-air",
+                "horizon=1",
+            ]
+        },
+        {
+            "name": "pvwest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "justMyCode": false,
+            "args": [
+                "config=az_pvwest",
+                // "model=ttg_iso",
+                // "embedding=none", 
+                "model.hparams.hidden_size=3",
+                // "dataset=pvwest",
+                "epochs=1",
+                // "+dataset.test_months=[8,9,10,11,12,1,2,3]",
+                "++tags=toy",
+                // "horizon=2",
+            ]
+        },
+        {
+            "name": "synth",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "./graph_sign_test",
+            "module": "experiments.synthetic_residuals_analysis",
+            "justMyCode": false,
+        },
+        {
+            "name": "score growth",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "./graph_sign_test",
+            "module": "experiments.run_score_growth",
+            "justMyCode": false,
+        },
+        {
+            "name": "la ckpt paper",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                "config=az_la_missing",
+                "++ckpt=logs/az_la_missing/2025-02-12-15-47-34/gwnet/la/2",
+                "++tags=lollo",
+            ]
+        },
+        {
+            "name": "pvwest ckpt paper",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                "config=az_pvwest",
+                "++ckpt=logs/az_pvwest/agcrn/pvwest/2025-02-17/21-56-16",
+                "++tags=lollo",
+            ]
+        },
+    ]
+}
