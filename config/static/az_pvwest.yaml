@@ -18,7 +18,7 @@ dataset:
     mask_zeros: true
 
 az_analysis:
-  use_mask: false
+  use_mask: true
   plot_spacetime_scores: false
   node_order: null
   time_set: [0, 400]
