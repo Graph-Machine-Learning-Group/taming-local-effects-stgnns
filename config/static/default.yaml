@@ -33,7 +33,7 @@ neptune:
 ckpt: null
 az_analysis:
   use_mask: true
-  multivariate: true
+  # multivariate: true
   node_order: null #fit
   plot_window: true
   plot_spacetime_scores: false
