@@ -1,4 +1,5 @@
 import sys, os, glob
+import warnings
 
 import numpy as np
 import torch
@@ -9,17 +10,16 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from tsl import logger
 from tsl.data import SpatioTemporalDataset, SpatioTemporalDataModule
-from tsl.data.preprocessing import StandardScaler
+from tsl.data.preprocessing import scalers
 from tsl.datasets import MetrLA, PemsBay, SolarBenchmark, PvUS, Elergone
 from tsl.datasets.pems_benchmarks import PeMS03, PeMS04, PeMS07, PeMS08
 from tsl.experiment import Experiment, NeptuneLogger
 from tsl.metrics import torch_metrics
 
 from lib import config as lib_config
-from lib.datasets import LocalGlobalGPVARDataset, AirQuality
+from lib.datasets import LocalGlobalGPVARDataset, AirQuality, EngRad
 from lib.nn import models, EmbeddingPredictor
-from lib.utils import find_devices, cfg_to_python
-
+from lib.utils import find_devices, cfg_to_python, cfg_to_neptune
 sys.path.append(os.path.abspath(os.path.join(os.path.curdir, "graph_sign_test")))
 from az_analysis.stat_test import optimality_check
 from az_analysis.visualization import az_score_plot, save_az_scores, AZ_COLORS
@@ -75,6 +75,10 @@ def get_dataset(dataset_cfg):
             data_ = np.ma.array(dataset.target.to_numpy(), mask=dataset.mask[..., 0])
             for i in range(0, data_.shape[0], data_.shape[0]//200):
                 print(f"{int(5 + i/data_.shape[0]*12)%12}\t{data_[i:i+50].mean():.1f}\t{data_[i:i+50].std():.1f}")
+    elif name == 'engrad':
+        dataset = EngRad(**dataset_cfg.hparams)
+        # Add just one valid night values for MinMaxScaler
+        dataset.mask[:24] = True
     elif name == 'gpvar':
         if "p_max" in dataset_cfg.hparams:
             dataset_cfg.hparams["p_max"] = 0
@@ -127,27 +131,6 @@ def run_traffic(cfg: DictConfig):
 
     if cfg.ckpt:
         cfg, model_ckpt = recreate_cfg(cfg.ckpt, cfg.az_analysis)
-        # logger.info(f"loading form {cfg.ckpt}")
-        # # checkpoint = os.path.abspath(args.from_checkpoint)
-        # # logging_path = os.path.abspath(os.path.join("/", "/".join(checkpoint.split("/")[:-1])))
-        # logging_path = os.path.abspath(cfg.ckpt)
-        # checkpoint = glob.glob(os.path.join(logging_path, "epoch=*"))
-        # assert len(checkpoint) == 1
-        # checkpoint = checkpoint[0]
-        # config_file = os.path.abspath(os.path.join(logging_path, "config.yaml"))
-        # # result_file = os.path.abspath(os.path.join(logging_path, "results_.npy"))
-        
-        # logger.info(f"Reading config_file: {config_file}")
-        # # stored_cfg = tsl.Config.from_config_file(config_file)
-        # stored_cfg = OmegaConf.load(config_file)
-        # stored_cfg.ckpt = cfg.ckpt
-        # stored_cfg.az_analysis = cfg.az_analysis
-        # # use_mask_ = cfg.get("use_mask", True)
-        # cfg = stored_cfg
-        # cfg.neptune.online = False
-        # # cfg.use_mask = use_mask_
-        # for k, v in cfg.items():
-        #     logger.info(f"{k:25s}: {v}")
 
     ########################################
     # data module                          #
@@ -158,9 +141,26 @@ def run_traffic(cfg: DictConfig):
     if cfg.get('add_exogenous'):
         assert not isinstance(dataset, LocalGlobalGPVARDataset)
         # encode time of the day and use it as exogenous variable
-        day_sin_cos = dataset.datetime_encoded('day').values
-        weekdays = dataset.datetime_onehot('weekday').values
-        covariates.update(u=np.concatenate([day_sin_cos, weekdays], axis=-1))
+        u = [dataset.datetime_encoded('day').values]
+
+        if isinstance(dataset, EngRad):
+            u.append(dataset.datetime_encoded('year').values)
+        else:
+            u.append(dataset.datetime_onehot('weekday').values)
+        # covariates.update(u=np.concatenate(u, axis=-1))
+        if 'u' in dataset.covariates:
+            u.append(dataset.get_frame('u', return_pattern=False))
+
+        if cfg.model.name == "fcrnn":
+            u = np.concatenate([u_.reshape(*u_.shape[:-2], -1)
+                                if u_.ndim == 3 else u_
+                                for u_ in u], axis=-1)
+        else:
+            ndim = max(u_.ndim for u_ in u)
+            u = np.concatenate([np.repeat(u_[:, None], dataset.n_nodes, 1)
+                                if u_.ndim < ndim else u_
+                                for u_ in u], axis=-1)
+        covariates.update(u=u)
 
     torch_dataset = SpatioTemporalDataset(target=dataset.dataframe(),
                                           mask=dataset.mask,
@@ -171,10 +171,14 @@ def run_traffic(cfg: DictConfig):
     if cfg.get('mask_as_exog', False) and 'u' in torch_dataset:
         torch_dataset.update_input_map(u=['u', 'mask'])
 
-    scale_axis = (0,) if cfg.get('scale_axis') == 'node' else (0, 1)
-    transform = {
-        'target': StandardScaler(axis=scale_axis)
-    }
+    # Scale input features
+    scaler_cfg = cfg.get('scaler')
+    if scaler_cfg is not None:
+        scale_axis = (0,) if scaler_cfg.axis == 'node' else (0, 1)
+        scaler_cls = getattr(scalers, f'{scaler_cfg.method}Scaler')
+        transform = dict(target=scaler_cls(axis=scale_axis))
+    else:
+        transform = None
 
     dm = SpatioTemporalDataModule(
         dataset=torch_dataset,
@@ -189,6 +193,15 @@ def run_traffic(cfg: DictConfig):
     adj = dataset.get_connectivity(**cfg.dataset.connectivity,
                                    train_slice=dm.train_slice)
     dm.torch_dataset.set_connectivity(adj)
+
+    # Normalize exogenous with high mean (i.e., EngRad temperature)
+    if isinstance(dataset, EngRad) and 'u' in torch_dataset:
+        u = torch_dataset.u
+        axis = list(range(u.ndim - 1))
+        u_mu = torch_dataset.u[dm.train_slice].mean(axis=axis)
+        u_std = torch_dataset.u[dm.train_slice].std(axis=axis)
+        um = u_mu > 3
+        torch_dataset.u[..., um] = (u[..., um] - u_mu[..., um]) / u_std[..., um]
 
     ########################################
     # Create model                         #
@@ -215,8 +228,13 @@ def run_traffic(cfg: DictConfig):
     loss_fn = torch_metrics.MaskedMAE()
 
     log_metrics = {'mae': torch_metrics.MaskedMAE(),
+                   'mse': torch_metrics.MaskedMSE(),
+                   'mape': torch_metrics.MaskedMAPE(),
                    'mre': torch_metrics.MaskedMRE(),
-                   'mse': torch_metrics.MaskedMSE()}
+                   'mae_at_step_1': torch_metrics.MaskedMAE(at=0),
+                   f'mae_at_step_{cfg.horizon}':
+                       torch_metrics.MaskedMAE(at=cfg.horizon - 1)
+                   }
 
     if cfg.get('lr_scheduler') is not None:
         scheduler_class = getattr(torch.optim.lr_scheduler,
@@ -235,9 +253,10 @@ def run_traffic(cfg: DictConfig):
         metrics=log_metrics,
         beta=cfg_to_python(cfg.regularization_weight),
         embedding_var=cfg.embedding.get('initial_var', 0.2),
+        # log_embeddings_every=5 if 'plot_embeddings' in cfg.tags else None,
         scheduler_class=scheduler_class,
         scheduler_kwargs=scheduler_kwargs,
-        scale_target=cfg.scale_target,
+        scale_target=False if scaler_cfg is None else scaler_cfg.scale_target,
     )
 
     ########################################
@@ -253,14 +272,17 @@ def run_traffic(cfg: DictConfig):
     tags = list(set(tags))
 
     if cfg.neptune:
+        run_args = cfg_to_neptune(cfg)
+        run_args['model']['trainable_parameters'] = predictor.trainable_parameters
         exp_logger = NeptuneLogger(api_key=lib_config["neptune_token"],
-                                project_name=lib_config["neptune_project"],
-                                experiment_name=cfg.run.name,
-                                tags=tags,
-                                params=OmegaConf.to_object(cfg),
-                                debug=not cfg.neptune.online,
-                                upload_stdout=False,
-                                )
+                                   project_name=lib_config["neptune_project"],
+                                   experiment_name=cfg.run.name,
+                                   save_dir=cfg.run.dir,
+                                   tags=tags,
+                                   params=run_args,
+                                   debug=not cfg.neptune.online,
+                                #    upload_stdout=False,
+                                   )
         # TODO this is for a known bug in neptunes
         # https://github.com/neptune-ai/neptune-client/issues/1702#issuecomment-2376615676
         import logging, neptune
@@ -343,50 +365,10 @@ def run_traffic(cfg: DictConfig):
 
  
     print("residuals shape:", res.shape)
-    # max_ts = 2000
-    # if res.shape[0] > max_ts:
-    #     res = torch.cat([res[:max_ts//2], res[-max_ts//2:]], axis=0)
-    #     if m is not None:
-    #         m = torch.cat([m[:max_ts//2], m[-max_ts//2:]], axis=0)
-    #     if time_index is not None:
-    #         time_index = time_index[:max_ts//2].union(time_index[-max_ts//2:])
- 
-    """
-    T_, N_ = 400, 10
-
-    # plt.plot(y[:T_, 0, N_, 0], label="y")
-    # plt.plot(y_hat[:T_, 0, N_, 0], label="y_hat")
-    # plt.plot(res[:T_, N_, 0], label="res")
-
-    for n_ in range(4):
-        plt.plot(res[:T_, n_, 0], label=f"Node {n_}", color=plt.cm.Set1.colors[n_])
-        # plt.plot(y[:T_, 0, n_, 0], label=f"Node {n_}", color=plt.cm.Set1.colors[n_], linestyle="dashed")
-        # plt.plot(y[:T_, 0, n_, 0], label=f"Node {n_}", color=plt.cm.Set1.colors[n_], linestyle="dotted")
-        
-    plt.legend()
-    plt.grid()
-    plt.savefig("tmp2.pdf")
-    plt.close()
-
-
-    T_, N_ = 400, 10
-    plt.figure(figsize=[8, 3])
-    for f_ in [0, 2, 5]:
-        plt.plot(time_index[:T_], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
-    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    plt.gca().tick_params(axis='x', labelrotation=90)
-    plt.gca().set_xticks(time_index[23:T_:24])
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig("tmp3.pdf")
-    plt.close()
-    """
 
     ei, ew = dataset.get_connectivity(layout="edge_index")
     graph = dict(edge_index=ei, edge_weight=ew)
 
-    logger.info(" --- all components ---------------------")
     log_metric_ = None if not isinstance(exp_logger, NeptuneLogger) else lambda n, v: exp_logger.log_metric(metric_name=n, metric_value=v)
     # optimality_check(residuals=res, mask=m, multivariate=cfg.az_analysis.multivariate, downsample=cfg.az_analysis.downsample, remove_median=True, 
     #                  logger_msg=logger, logger_metric=log_metric_,
@@ -394,24 +376,6 @@ def run_traffic(cfg: DictConfig):
     figname = f"{cfg.dataset.name}_{cfg.model.name}_{cfg.embedding.method}"
     if cfg.az_analysis.use_mask:
         figname += "_masked"
-    # az_score_plot(residuals=res[..., :1], mask=m[..., :1], use_mask=cfg.use_mask,
-    #               multivariate=multivariate,
-    #               savefig=figname,
-    #               node_order="fit",
-    #               **graph,
-    #               plot_window=True,
-    #               plot_spacetime_scores=True,
-    #               time_filter=10,
-    #               k_smooth_st=5,
-    #               # plot_dataset=True,
-    #               # node_set=list(range(60, 100)),
-    #               # time_set=list(range(1550, 1900)))
-    #               node_set=list(range(30, 70)),
-    #               time_set=list(range(1400, 1900)))
-    # az_score_plot(residuals=res[..., :1], mask=m[..., :1], #use_mask=cfg.use_mask,
-    #               **graph,
-    #               savefig=os.path.join(cfg.ckpt if cfg.ckpt else cfg.run.dir, figname),
-    #               **cfg.az_analysis)
 
     savepath=cfg.ckpt if cfg.ckpt else cfg.run.dir
     common_args = dict(residuals=res, mask=m, savepath=savepath, time_index=time_index, log=logger.info)
@@ -423,31 +387,37 @@ def run_traffic(cfg: DictConfig):
         
     metric_name = "residuals/az-test-stat"
 
-    if adjusted_scores:  # if adjusted_scores run the adjusted too
-        OmegaConf.update(cfg, "az_analysis.adjusted_scores", True, force_add=True)
+    if adjusted_scores: # if adjusted_scores, run then non adjusted scores analysis too
+        OmegaConf.update(cfg, "az_analysis.adjusted_scores", False, force_add=True)
         if multivariate: # if multivariate run the univariate too
-            az_scores_adj_uni = save_az_scores(
+            logger.info(" ------------ base + UV ---------------------")
+            az_scores_base_uni = save_az_scores(
                 **common_args, **graph, **cfg.az_analysis,
-                savefig=figname + "_adjusted",
+                savefig=figname,
                 multivariate=False,
             )
-        az_scores_adj = save_az_scores(
+        logger.info(" ------------ base + (MV)---------------------")
+        az_scores_base = save_az_scores(
             **common_args, **graph, **cfg.az_analysis,
-            savefig=figname + "_adjusted",
+            savefig=figname,
             multivariate=multivariate,
         )
-        log_metric_(metric_name+"-adj"+"[T]", az_scores_adj["glob_0.0"])
-        log_metric_(metric_name+"-adj"+"[ST]", az_scores_adj["glob_0.5"])
-        log_metric_(metric_name+"-adj"+"[S]", az_scores_adj["glob_1.0"])
+        log_metric_(metric_name+"[T]", az_scores_base["glob_0.0"])
+        log_metric_(metric_name+"[ST]", az_scores_base["glob_0.5"])
+        log_metric_(metric_name+"[S]", az_scores_base["glob_1.0"])
+        OmegaConf.update(cfg, "az_analysis.adjusted_scores", adjusted_scores, force_add=True) # reset to its original value
 
-    # always run then non adjusted scores analysis
-    OmegaConf.update(cfg, "az_analysis.adjusted_scores", False, force_add=True)
+    if adjusted_scores:
+        metric_name = metric_name+"-adj"
+        figname=figname + "_adjusted"
     if multivariate: # if multivariate run the univariate too
+        logger.info(" ------------ (adj) + UV ---------------------")
         az_scores_uni = save_az_scores(
             **common_args, **graph, **cfg.az_analysis,
             savefig=figname,
             multivariate=False,
         )
+    logger.info(" ------------ (adj) + (MV) ---------------------")
     az_scores = save_az_scores(
         **common_args, **graph, **cfg.az_analysis,
         savefig=figname,
@@ -460,23 +430,22 @@ def run_traffic(cfg: DictConfig):
     if cfg.dataset.name == "pvwest":
         cmn_args = dict(cfg=cfg, savepath=savepath, mask=m, res=res, y=y, y_hat=y_hat)
         try:
-            plot_pvwest_figures(scores=az_scores_adj, **cmn_args, suffix="adj")
-        except:
-            pass
+            plot_pvwest_figures(scores=az_scores_uni, **cmn_args, suffix="adj_uv")
+        except Exception as e:
+            warnings.warn(e)
         try:
-            plot_pvwest_figures(scores=az_scores_adj_uni, **cmn_args, suffix="adj_uv")
-        except:
-            pass
-        plot_pvwest_figures(scores=az_scores, **cmn_args, suffix="base")
+            plot_pvwest_figures(scores=az_scores_base, **cmn_args, suffix="base")
+        except Exception as e:
+            warnings.warn(e)
+        plot_pvwest_figures(scores=az_scores, **cmn_args, suffix="adj")
 
-        OmegaConf.update(cfg, "az_analysis.adjusted_scores", True, force_add=True)
         OmegaConf.update(cfg, "az_analysis.feat_set", [2], force_add=True)
         az_scores_2 = save_az_scores(
             **common_args, **graph, **cfg.az_analysis,
             savefig=figname,
             multivariate=multivariate,
         )
-        plot_pvwest_figures(scores=az_scores_2, **cmn_args, suffix="base")
+        plot_pvwest_figures(scores=az_scores_2, **cmn_args, suffix="feat2")
 
     # logger.info(" --- first component --------------------")
     # optimality_check(residuals=res[..., :1], mask=m[..., :1], remove_median=True, 
@@ -503,6 +472,8 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
             warnings.append(s) 
             scores[s][night_] = np.nan
 
+    # ---------------------------------------------------------------------------------------------------------
+
     plt.figure(figsize=[8, 3])
     for f_ in cfg.az_analysis.feat_set:
         plt.plot(scores["time_index"], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
@@ -515,8 +486,7 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.savefig(os.path.join(savepath, f"tmp3_{suffix}_positive_res_ratio.pdf"))
     plt.close()
 
-
-
+    # ---------------------------------------------------------------------------------------------------------
 
     figsize = [6, 2.5]
 
@@ -562,11 +532,7 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.savefig(os.path.join(savepath, f"tmp4.2_{suffix}_score_mae.pdf"))
     plt.close()
 
-
-
-
-
-
+    # ---------------------------------------------------------------------------------------------------------
 
     # plt.figure(figsize=[8, 3])
     # Create some mock data
@@ -611,15 +577,7 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.savefig(os.path.join(savepath, f"tmp4.2_{suffix}_relerror.pdf"))
     plt.close()
 
-
-
-
-
-
-
-
-
-
+    # ---------------------------------------------------------------------------------------------------------
 
     plt.figure(figsize=[8, 3])
     # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
@@ -637,6 +595,8 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.tight_layout()
     plt.savefig(os.path.join(savepath, f"tmp5_{suffix}_3days_forecasts.pdf"))
     plt.close()
+
+    # ---------------------------------------------------------------------------------------------------------
 
     plt.figure(figsize=[8, 3])
     # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
@@ -657,6 +617,7 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.savefig(os.path.join(savepath, f"tmp6_{suffix}_1day_forecast.pdf"))
     plt.close()
 
+    # ---------------------------------------------------------------------------------------------------------
 
     plt.figure(figsize=[8, 3])
     # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
@@ -676,7 +637,6 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.tight_layout()
     plt.savefig(os.path.join(savepath, f"tmp7_{suffix}_night_residuals.pdf"))
     plt.close()
-
 
 
 if __name__ == '__main__':

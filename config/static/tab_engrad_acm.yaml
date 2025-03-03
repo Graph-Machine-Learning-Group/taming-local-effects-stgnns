@@ -1,0 +1,40 @@
+defaults:
+  - benchmarks
+  - override dataset: engrad
+#  - override hydra/launcher: joblib
+  - _self_
+
+tags:
+  - tab_benchmarks
+  - acm
+  - emb_${embedding.method}
+  - ${dataset.name}
+  - ${model.name}
+
+# neptune:
+#   offline: False
+
+az_analysis:
+  use_mask: true
+  plot_spacetime_scores: true
+  node_order: null
+  # time_set: [0, 400]
+  # node_set: [0, 20]
+  # feat_set: [0, 2, 5]
+  feat_set: [0, 2, 5]
+  time_filter: 1
+
+#### Experiment params ########################################################
+hydra:
+  sweep:
+    dir: logs/tab_engrad/${now:%Y-%m-%d-%H-%M-%S}
+#  launcher:
+#    n_jobs: 2  # number of parallel jobs
+  mode: MULTIRUN
+  sweeper:
+    params:
+      # +task: 1, 2, 3, 4, 5
+      # model: fcrnn, rnn, local_rnn, ttg_iso, ttg_aniso, tag_iso, tag_aniso
+#      embedding: uniform
+      +task: 1 #, 2, 3, 4, 5
+      model: ttg_iso #fcrnn, rnn, local_rnn, ttg_iso, ttg_aniso, tag_iso, tag_aniso

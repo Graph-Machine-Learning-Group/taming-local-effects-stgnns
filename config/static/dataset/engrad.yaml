@@ -1,0 +1,41 @@
+# @package _global_
+
+#### Dataset params ###########################################################
+dataset:
+  name: engrad
+  hparams:
+    root: ./data/EngRad
+    target_channels: "shortwave_radiation" # ["temperature_2m", "shortwave_radiation", "relative_humidity_2m", "cloud_cover"]  # "all", "shortwave_radiation"
+    covariate_channels: ["temperature_2m", "relative_humidity_2m", "precipitation", "cloud_cover"] # ["relative_humidity_2m", "precipitation", "cloud_cover"]  # null, ["temperature_2m", "relative_humidity_2m", "precipitation", "cloud_cover"]
+    mask_zero_radiance: True
+    precipitation_unit: cm
+  splitting:
+    method: engrad
+    val_len: 2016     # 7*24*12    0.1
+    val_seq_len: 168  # 7*24
+    first_val_step: [2019, 1, 1]
+    first_test_step: [2020, 1, 1]
+  connectivity:
+    method: distance
+    threshold: 0.1
+    theta: 50
+    knn: 8
+    force_symmetric: True
+    include_self: False
+    layout: edge_index
+#  make_graph_connected: True
+  covariates:
+    year: True
+    day: True
+
+#### Windowing params #########################################################
+window: 24
+horizon: 6
+stride: 1
+
+min_mask_sample: 0
+
+scaler:
+  method: MinMax
+  axis: graph
+  scale_target: True

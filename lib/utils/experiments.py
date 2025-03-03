@@ -40,3 +40,17 @@ def cfg_to_python(obj):
         return OmegaConf.to_object(obj)
     except ValueError:
         return obj
+
+
+def cfg_to_neptune(obj):
+    cfg = cfg_to_python(obj)
+
+    def list_to_str(d):
+        for k, v in d.items():
+            if isinstance(v, list):
+                d[k] = str(v)
+            elif isinstance(v, dict):
+                list_to_str(v)
+        return d
+
+    return list_to_str(cfg)
