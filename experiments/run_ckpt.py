@@ -427,7 +427,7 @@ def run_traffic(cfg: DictConfig):
     log_metric_(metric_name+"[ST]", az_scores["glob_0.5"])
     log_metric_(metric_name+"[S]", az_scores["glob_1.0"])
 
-    if cfg.dataset.name == "pvwest":
+    if cfg.dataset.name in ["pvwest", "engrad"]:
         cmn_args = dict(cfg=cfg, savepath=savepath, mask=m, res=res, y=y, y_hat=y_hat)
         try:
             plot_pvwest_figures(scores=az_scores_uni, **cmn_args, suffix="adj_uv")

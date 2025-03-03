@@ -18,10 +18,8 @@ az_analysis:
   use_mask: true
   plot_spacetime_scores: true
   node_order: null
-  # time_set: [0, 400]
-  # node_set: [0, 20]
-  # feat_set: [0, 2, 5]
-  feat_set: [0, 2, 5]
+  time_set: [0, 200]
+  feat_set: [0, 2]
   time_filter: 1
 
 #### Experiment params ########################################################

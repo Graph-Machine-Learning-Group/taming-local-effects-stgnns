@@ -62,12 +62,17 @@ The script used for the experiments in the paper is in the `experiments` folder.
 - just use run_ckpt
 ```bash
 #missing data on la
-python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,gwnet,dcrnn,agcrn embedding=none dataset=la --multirun
+python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,ttg_iso,gwnet,dcrnn,agcrn embedding=none dataset=la --multirun
+# CUDA_VISIBLE_DEVICES=0 python -m experiments.run_ckpt config=az_la_missing model=rnn,fcrnn,ttg_iso,gwnet embedding=none dataset=la --multirun
+# CUDA_VISIBLE_DEVICES=1 python -m experiments.run_ckpt config=az_la_missing model=dcrnn,agcrn embedding=none dataset=la --multirun
 python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_la_missing/az_la_missing.yaml
 
-#pvwest night time
-python -m experiments.run_ckpt config=az_pvwest dataset=pvwest 
+#pvwest
+python -m experiments.run_ckpt config=az_pvwest 
 python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_pvwest/az_pvwest.yaml
+#engrad
+python -m experiments.run_ckpt config=az_engrad 
+# python graph_sign_test/experiments/tsl_read_ckpt.py logs/az_pvwest/az_pvwest.yaml
 ```
 
 

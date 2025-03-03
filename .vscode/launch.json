@@ -122,7 +122,22 @@
             "module": "experiments.run_ckpt",
             "args": [
                 "config=az_pvwest",
-                "++ckpt=logs/az_pvwest/agcrn/pvwest/2025-02-17/21-56-16",
+                // "++ckpt=logs/az_pvwest/agcrn/pvwest/2025-02-17/21-56-16b",
+                // "++ckpt=logs/az_pvwest/agcrn/pvwest/2025-02-19/17-09-24b",
+                "++ckpt=logs/az_pvwest/ttg_iso/pvwest/2025-02-25/11-53-09",
+                "++tags=lollo",
+            ]
+        },
+        {
+            "name": "engrad ckpt paper",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.run_ckpt",
+            "args": [
+                "config=az_engrad",
+                // "++ckpt=logs/az_pvwest/agcrn/pvwest/2025-02-17/21-56-16b",
+                // "++ckpt=logs/az_pvwest/agcrn/pvwest/2025-02-19/17-09-24b",
+                "++ckpt=logs/tab_engrad/2025-02-25-15-00-11/ttg_iso/engrad/0b",
                 "++tags=lollo",
             ]
         },
