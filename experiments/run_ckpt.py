@@ -339,7 +339,7 @@ def run_traffic(cfg: DictConfig):
     ########################################
 
     predictor.freeze()
-    trainer.test(predictor, dataloaders=dm.test_dataloader())
+    # trainer.test(predictor, dataloaders=dm.test_dataloader())
 
     ########################################
     # residual analysis                    #
@@ -476,7 +476,7 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
 
     plt.figure(figsize=[8, 3])
     for f_ in cfg.az_analysis.feat_set:
-        plt.plot(scores["time_index"], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
+        plt.plot(scores["time_index"][:T_], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
     # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
     plt.gca().tick_params(axis='x', labelrotation=90)
     plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
@@ -492,18 +492,18 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
 
     fig, ax1 = plt.subplots(figsize=figsize)
 
-    l1 = ax1.plot(scores["time_index"], scores["time_1.0"], label=f"Score $c_{{1}}(t)$", color=AZ_COLORS[1.0], linestyle="dashdot", linewidth=1.)
-    l0 = ax1.plot(scores["time_index"], scores["time_0.0"], label=f"Score $c_{{0}}(t)$", color=AZ_COLORS[0.0], linestyle="dashed", linewidth=1.)
-    l5 = ax1.plot(scores["time_index"], scores["time_0.5"], label=f"Score $c_{{1/2}}(t)$", color=AZ_COLORS[0.5], linestyle="solid", linewidth=1.)
+    l1 = ax1.plot(scores["time_index"][:T_], scores["time_1.0"], label=f"Score $c_{{1}}(t)$", color=AZ_COLORS[1.0], linestyle="dashdot", linewidth=1.)
+    l0 = ax1.plot(scores["time_index"][:T_], scores["time_0.0"], label=f"Score $c_{{0}}(t)$", color=AZ_COLORS[0.0], linestyle="dashed", linewidth=1.)
+    l5 = ax1.plot(scores["time_index"][:T_], scores["time_0.5"], label=f"Score $c_{{1/2}}(t)$", color=AZ_COLORS[0.5], linestyle="solid", linewidth=1.)
 
     ax2 = ax1.twinx()
-    la = ax2.plot(scores["time_index"], scores["time_mae"], 
+    la = ax2.plot(scores["time_index"][:T_], scores["time_mae"], 
                     label=f"MAE", color="black", linestyle="solid", linewidth=1.)
     abs_ = res[:T_, :, cfg.az_analysis.feat_set].abs().mean(-1)
     abs_[night_] = torch.nan
-    ax2.plot(scores["time_index"], torch.nanmean(abs_, axis=-1), 
+    ax2.plot(scores["time_index"][:T_], torch.nanmean(abs_, axis=-1), 
                     label=f"MAE", color="black", linestyle="dotted", linewidth=1.)
-    ax2.fill_between(scores["time_index"], 
+    ax2.fill_between(scores["time_index"][:T_], 
                         torch.nanquantile(abs_, .25, axis=-1),
                         torch.nanquantile(abs_, .75, axis=-1),
                         color="gray", alpha=.5)
@@ -539,9 +539,9 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     fig, ax1 = plt.subplots(figsize=[10, 2.5])
     # fig, ax1 = plt.subplots(figsize=[6, 2.5])
 
-    lm = ax1.plot(scores["time_index"], y[:T_, f_, :, 0].mean(axis=-1), label=f"Target $\mathbf y_{{t+{f_+1}}}$", color="black", 
+    lm = ax1.plot(scores["time_index"][:T_], y[:T_, f_, :, 0].mean(axis=-1), label=f"Target $\mathbf y_{{t+{f_+1}}}$", color="black", 
                     linestyle="solid", linewidth=1.)
-    ax1.fill_between(scores["time_index"], 
+    ax1.fill_between(scores["time_index"][:T_], 
                         torch.quantile(y[:T_, f_, :, 0], .25, axis=-1),
                         torch.quantile(y[:T_, f_, :, 0], .75, axis=-1),
                     color="gray", alpha=.5)        
@@ -550,7 +550,7 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     #             #   linestyle="solid", linewidth=2.0, alpha=.6)
     #               linestyle="solid", color="gray")
                 #   linestyle="solid", linewidth=0.5)
-    lr = ax2.plot(scores["time_index"], torch.nanmean(torch.where(y[:T_, f_, :, 0] > 1e-4, 100 * torch.abs(res[:T_, :, f_]) / y[:T_, f_, :, 0], torch.nan), axis=-1), 
+    lr = ax2.plot(scores["time_index"][:T_], torch.nanmean(torch.where(y[:T_, f_, :, 0] > 1e-4, 100 * torch.abs(res[:T_, :, f_]) / y[:T_, f_, :, 0], torch.nan), axis=-1), 
                     label=f"MAPE", color="black", linestyle="dashed", linewidth=1.)
 
     ax1.xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
@@ -584,8 +584,8 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
     f_ = 2
     for i_ in range(5):
-        plt.plot(scores["time_index"], y_hat[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Set1.colors[i_])
-        plt.plot(scores["time_index"], y[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Pastel1.colors[i_], linestyle="dashed")
+        plt.plot(scores["time_index"][:T_], y_hat[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Set1.colors[i_])
+        plt.plot(scores["time_index"][:T_], y[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Pastel1.colors[i_], linestyle="dashed")
 
     # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
     plt.gca().tick_params(axis='x', labelrotation=90)
