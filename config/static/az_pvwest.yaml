@@ -1,6 +1,6 @@
 defaults:
   - benchmarks
-  - override model: ttg_iso
+  - override model: agcrn
   - override dataset: pvwest
 
 hydra:
@@ -20,6 +20,7 @@ az_analysis:
   use_mask: true
   plot_spacetime_scores: true
   node_order: null
-  time_set: [0, 400]
-  feat_set: [0, 2, 5]
+  feat_set: [0, 1, 2]
+  time_set: [4920, 5350] # centered around 3 days around the middle of the test set
+  # node_set: [0, 300] 
   time_filter: 1

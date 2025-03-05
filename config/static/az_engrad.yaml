@@ -3,8 +3,20 @@ defaults:
   - override dataset: engrad
   - override model: ttg_iso
   - override embedding: none
-  # - override hydra/launcher: joblib
-  - _self_
+  - override hydra/launcher: joblib
+
+hydra:
+  run:
+    # dir: logs/az_la_missing/${model.name}/${dataset.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: logs/v1/az_engrad/${now:%Y-%m-%d-%H-%M-%S}
+  sweep:
+    dir: logs/v1/az_engrad/${now:%Y-%m-%d-%H-%M-%S}
+  launcher:
+    n_jobs: 2  # number of parallel jobs
+  mode: MULTIRUN
+  sweeper:
+    params:
+      model:  agcrn, ttg_iso
 
 tags:
   - az_engrad
@@ -16,19 +28,8 @@ tags:
 
 az_analysis:
   use_mask: true
-  plot_spacetime_scores: true
+  plot_spacetime_scores: false
   node_order: null
-  time_set: [0, 200]
-  feat_set: [0, 2]
+  time_set: [4006, 4244]
+  feat_set: [0, 1, 2]
   time_filter: 1
-
-#### Experiment params ########################################################
-hydra:
-  sweep:
-    dir: logs/az_engrad/${now:%Y-%m-%d-%H-%M-%S}
-  # launcher:
-  #   n_jobs: 2  # number of parallel jobs
-  # mode: MULTIRUN
-  # sweeper:
-  #   params:
-  #     horizon: 1, 3, 6

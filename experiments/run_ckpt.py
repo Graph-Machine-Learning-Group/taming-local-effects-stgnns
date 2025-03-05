@@ -143,7 +143,7 @@ def run_traffic(cfg: DictConfig):
         # encode time of the day and use it as exogenous variable
         u = [dataset.datetime_encoded('day').values]
 
-        if isinstance(dataset, EngRad):
+        if isinstance(dataset, (EngRad, PvUS)):
             u.append(dataset.datetime_encoded('year').values)
         else:
             u.append(dataset.datetime_onehot('weekday').values)
@@ -358,7 +358,7 @@ def run_traffic(cfg: DictConfig):
     res = einops.rearrange(y_hat - y, "b h n f -> b n (h f) ")
     if m is not None:
         m = einops.rearrange(m, "b h n f -> b n (h f) ")
-    if cfg.dataset.name == "pvwest":
+    if cfg.dataset.name in ["pvwest", "engrad"]:
         time_index = dm.torch_dataset.index[dm.test_slice.numpy()[cfg.window:dm.test_slice.numpy().shape[0]-cfg.horizon+1]]
     else:
         time_index = None
@@ -386,6 +386,7 @@ def run_traffic(cfg: DictConfig):
         multivariate = multivariate and len(cfg.az_analysis.feat_set) > 1
         
     metric_name = "residuals/az-test-stat"
+    other_cmn_args = dict(cfg=cfg, savepath=savepath, mask=m, res=res, y=y, y_hat=y_hat, dataset_name=cfg.dataset.name)
 
     if adjusted_scores: # if adjusted_scores, run then non adjusted scores analysis too
         OmegaConf.update(cfg, "az_analysis.adjusted_scores", False, force_add=True)
@@ -402,6 +403,7 @@ def run_traffic(cfg: DictConfig):
             savefig=figname,
             multivariate=multivariate,
         )
+        plot_radiation_figures(scores=az_scores_base, **other_cmn_args, suffix="base")
         log_metric_(metric_name+"[T]", az_scores_base["glob_0.0"])
         log_metric_(metric_name+"[ST]", az_scores_base["glob_0.5"])
         log_metric_(metric_name+"[S]", az_scores_base["glob_1.0"])
@@ -417,95 +419,73 @@ def run_traffic(cfg: DictConfig):
             savefig=figname,
             multivariate=False,
         )
+        plot_radiation_figures(scores=az_scores_uni, **other_cmn_args, suffix="adj_uv")
     logger.info(" ------------ (adj) + (MV) ---------------------")
     az_scores = save_az_scores(
         **common_args, **graph, **cfg.az_analysis,
         savefig=figname,
         multivariate=multivariate,
     )
+    plot_radiation_figures(scores=az_scores, **other_cmn_args, suffix="adj")
     log_metric_(metric_name+"[T]", az_scores["glob_0.0"])
     log_metric_(metric_name+"[ST]", az_scores["glob_0.5"])
     log_metric_(metric_name+"[S]", az_scores["glob_1.0"])
 
-    if cfg.dataset.name in ["pvwest", "engrad"]:
-        cmn_args = dict(cfg=cfg, savepath=savepath, mask=m, res=res, y=y, y_hat=y_hat)
-        try:
-            plot_pvwest_figures(scores=az_scores_uni, **cmn_args, suffix="adj_uv")
-        except Exception as e:
-            warnings.warn(e)
-        try:
-            plot_pvwest_figures(scores=az_scores_base, **cmn_args, suffix="base")
-        except Exception as e:
-            warnings.warn(e)
-        plot_pvwest_figures(scores=az_scores, **cmn_args, suffix="adj")
-
-        OmegaConf.update(cfg, "az_analysis.feat_set", [2], force_add=True)
-        az_scores_2 = save_az_scores(
-            **common_args, **graph, **cfg.az_analysis,
-            savefig=figname,
-            multivariate=multivariate,
-        )
-        plot_pvwest_figures(scores=az_scores_2, **cmn_args, suffix="feat2")
-
-    # logger.info(" --- first component --------------------")
-    # optimality_check(residuals=res[..., :1], mask=m[..., :1], remove_median=True, 
-    #                  logger_msg=logger, logger_metric=log_metric_,
-    #                  **graph)
-    
-    # logger.info(" --- last component --------------------")
-    # optimality_check(residuals=res[..., -1:], mask=m[..., -1:], remove_median=True, 
-    #                  logger_msg=logger, logger_metric=log_metric_,
-    #                  **graph)
 
     exp_logger.finalize('success')
 
-def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
-
+def plot_radiation_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix, dataset_name):
+    if dataset_name not in ["pvwest", "engrad"]:
+        return
     T0, T1 = cfg.az_analysis.get("time_set", [0, 400])
     feat_set = [0] if "uv" in suffix else cfg.az_analysis.get("feat_set", list(range(res.shape[-1])))
     res_ = res[T0: T1, :, feat_set]
     mask_ = mask[T0: T1, :, feat_set]
+    y_ = y[T0: T1, feat_set, :, 0].transpose(-1, -2)
     # night_ = torch.where((~mask_).any(-1).sum(-1) > res_.shape[1] * .95)[0].numpy()
-    night_ = torch.where((~mask_).all(-1).all(-1))[0].numpy()
+    # night_ = torch.where((~mask_).all(-1).all(-1))[0].numpy()
+    # day_mask_ = (mask_[..., 0].sum(1, keepdim=True)>.5*mask_.shape[1])
+    # night_idx_ = torch.where(~day_mask_[..., 0])[0].numpy()
+    day_mask_ = ~np.isnan(scores["time_0.5"])
 
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
-    # night_ = torch.where((y[:T_, :, :, 0]==0).all(-1).all(-1))[0].numpy()
-    # night_ = torch.where((~mask[T0: T1]).all(-1).all(-1))[0].numpy()
     warnings = []
     for s in ["time_mae", "time_0.0", "time_0.5", "time_1.0"]:
-        if not np.all(np.isnan(scores[s][night_])):
+        if not np.all(np.isnan(scores[s][~day_mask_])):
             warnings.append(s) 
-            scores[s][night_] = np.nan
+            scores[s][~day_mask_] = np.nan
             print("WARNING", s)
 
 
     # --- Sign of residuals ------------------------------------------------------------------------------------------------------
 
-    plt.figure(figsize=[8, 3])
-    for f_ in range(res_.shape[-1]):
-        plt.plot(scores["time_index"], torch.mean(res_[..., f_]>0, dtype=float, axis=1), label=f"{feat_set[f_]}-step ahead", color=plt.cm.Set2.colors[f_])
-    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    plt.gca().tick_params(axis='x', labelrotation=90)
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig(os.path.join(savepath, f"tmp3_{suffix}_positive_res_ratio.pdf"))
-    plt.close()
+    # plt.figure(figsize=[8, 3])
+    # for f_ in range(res_.shape[-1]):
+    #     plt.plot(scores["time_index"], torch.mean(res_[..., f_]>0, dtype=float, axis=1), label=f"{feat_set[f_]}-step ahead", color=plt.cm.Set2.colors[f_])
+    # # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
+    # plt.gca().tick_params(axis='x', labelrotation=90)
+    # plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
+    # plt.legend()
+    # plt.grid()
+    # plt.tight_layout()
+    # plt.savefig(os.path.join(savepath, f"tmp3_{suffix}_positive_res_ratio.pdf"))
+    # plt.close()
 
+    figsize = [9, 3.8] if dataset_name == "engrad" else [7, 3.5]
+    abs_ = (res_ * mask_).abs().mean(-1) # set to zero masked value and computes MAE on feat_dim
+    # f_ = 0 # len(feat_set) - 1
+    # signal = y[T0: T1, :, :, 0].mean(1)
+    signal_ = (y_ * mask_).abs().mean(-1) # set to zero masked value and computes MAE on feat_dim
 
+    # abs_[torch.where((~mask_).any(-1))] = torch.nan
+    # signal[torch.where((~mask_).any(-1))] = torch.nan
+    abs_[~day_mask_] = torch.nan
+    signal_[~day_mask_] = torch.nan
+    rel_error = 100 * abs_ / signal_
 
-    figsize = [5.5, 3]
-    abs_ = (res_ * mask_).abs().mean(-1)
-    abs_[torch.where((~mask_).any(-1))] = torch.nan
-
-    f_ = 0 # len(feat_set) - 1
-    signal = y[T0: T1, :, :, 0].mean(1)
-
+    # signal_[time_mask_] = torch.nan
     fig, axs = plt.subplots(2, 1, figsize=figsize, sharex=True)
-
-
 
     # --- Scores and MAE -----------------------------------------------------------------------------------------------------
     
@@ -517,58 +497,38 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     la = ax0b.plot(scores["time_index"], scores["time_mae"], 
                     label=f"MAE", linestyle="solid", color="gray", alpha=0.8, linewidth=1.)
 
-    # axs[0].xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
-    # axs[0].tick_params(axis='x', labelrotation=90)
-
     # axs[0].set_ylim(top=1.0, bottom= -1)
     axs[0].set_ylabel(r"Scores $c_\lambda(t)$")
     # axs[0].tick_params(axis='y', labelcolor=AZ_COLORS[0.5])    
     axs[0].grid()    
     
-    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    # ax0b.set_ylim(bottom=0.0)
-    # ax2.set_xticks()
     ax0b.set_ylabel(f"MAE")
     ax0b.yaxis.label.set_color("gray")
     ax0b.tick_params(axis='y', labelcolor="gray")       
 
     lns = l1 + l5 + l0 + la
     labs = [l.get_label() for l in lns]
-    ax0b.legend(lns, labs, loc=0)
-
-    # plt.legend()
-    # plt.grid()
-    # plt.tight_layout()
-    # plt.savefig(os.path.join(savepath, f"tmp4.2_{suffix}_score_mae.pdf"))
-    # plt.close()
 
     # --- Relative Error ------------------------------------------------------------------------------------------------------
 
-
-    # plt.figure(figsize=[8, 3])
-    # Create some mock data
-    # fig, ax1 = plt.subplots(figsize=figsize)
-    # fig, ax1 = plt.subplots(figsize=[6, 2.5])
-    lm = axs[1].plot(scores["time_index"], signal.mean(axis=-1), label=f"Target $\mathbf y_{{t+{feat_set[f_]+1}}}$", color="darkgoldenrod", 
+    lm = axs[1].plot(scores["time_index"], signal_.nanmean(axis=-1), label=f"Target $\mathbf y$", color="darkgoldenrod", 
                     linestyle="solid", linewidth=1.)
     axs[1].fill_between(scores["time_index"], 
-                        torch.quantile(signal, .25, axis=-1),
-                        torch.quantile(signal, .75, axis=-1),
-                    color="goldenrod", alpha=.5)        
+                        torch.nanquantile(signal_, .25, axis=-1),
+                        torch.nanquantile(signal_, .75, axis=-1),
+                    color="goldenrod", alpha=.5)
     ax1b = axs[1].twinx()  # instantiate a second Axes that shares the same x-axis
-    # ax2.plot(time_index[:T_], az_scores_adj["time_mae"], label=f"MAE", color="black", 
-    #             #   linestyle="solid", linewidth=2.0, alpha=.6)
-    #               linestyle="solid", color="gray")
-                #   linestyle="solid", linewidth=0.5)
-    # rel_err = torch.nanmean(torch.where(y[T0: T1, feat_set[f_], :, 0] > 1e-4, 100 * torch.abs(res[T0: T1, :, f_]) / y[T0: T1, f_, :, 0]
-    # lr = ax2.plot(scores["time_index"][T0: T1], torch.nanmean(torch.where(y[T0: T1, feat_set[f_], :, 0] > 1e-4, 100 * torch.abs(res[T0: T1, :, f_]) / y[T0: T1, f_, :, 0], torch.nan), axis=-1), 
-    #                 label=f"MAPE", color="black", linestyle="dashed", linewidth=1.)
-    rel_error = 100 * abs_ / signal
-    lr = ax1b.semilogy(scores["time_index"], torch.nanmean(rel_error, axis=-1), 
+    lr = ax1b.plot(scores["time_index"], torch.nanmean(rel_error, axis=-1), 
                     label=f"MAPE", color="gray", linestyle="dashed", linewidth=1.)
 
-    axs[1].xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
-    axs[1].tick_params(axis='x', labelrotation=90)
+    if dataset_name == "pvwest":
+        axs[1].xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
+        axs[1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(axs[1].xaxis.get_major_locator()))     
+        axs[1].tick_params(axis='x', labelrotation=90)
+    else:
+        axs[1].set_xticks(scores["time_index"][::24])        
+        axs[1].tick_params(axis='x', labelrotation=90)   
+        axs[1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(axs[1].xaxis.get_major_locator()))     
 
     axs[1].set_ylim(bottom=0)
     axs[1].set_ylabel("Target value")
@@ -578,15 +538,17 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     axs[1].grid()    
     
     # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    ax1b.set_ylim(bottom=0.0) #, top=300)
+    ax1b.set_ylim(bottom=0.0, top=min([500, rel_error[day_mask_].nanmean(-1).max()]))
     # ax2.set_xticks()
     ax1b.set_ylabel(f"MAPE (\%)")
     ax1b.yaxis.label.set_color("gray")
     ax1b.tick_params(axis='y', labelcolor="gray")       
 
-    lns = lm + lr
+
+    lns = l1 + l5 + l0 + lm + lr + la
+    # lns = lm + lr
     labs = [l.get_label() for l in lns]
-    ax1b.legend(lns, labs, loc="upper center")
+    ax0b.legend(lns, labs, loc="lower center", ncols=3, bbox_to_anchor=(0.5, 1.))
 
     # plt.legend()
     # plt.grid()
