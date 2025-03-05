@@ -1,13 +1,13 @@
 defaults:
   - benchmarks
   - override dataset: engrad
-#  - override hydra/launcher: joblib
+  - override model: ttg_iso
+  - override embedding: none
+  # - override hydra/launcher: joblib
   - _self_
 
 tags:
-  - tab_benchmarks
-  - acm
-  - emb_${embedding.method}
+  - az_engrad
   - ${dataset.name}
   - ${model.name}
 
@@ -25,14 +25,10 @@ az_analysis:
 #### Experiment params ########################################################
 hydra:
   sweep:
-    dir: logs/tab_engrad/${now:%Y-%m-%d-%H-%M-%S}
-#  launcher:
-#    n_jobs: 2  # number of parallel jobs
-  mode: MULTIRUN
-  sweeper:
-    params:
-      # +task: 1, 2, 3, 4, 5
-      # model: fcrnn, rnn, local_rnn, ttg_iso, ttg_aniso, tag_iso, tag_aniso
-#      embedding: uniform
-      +task: 1 #, 2, 3, 4, 5
-      model: ttg_iso #fcrnn, rnn, local_rnn, ttg_iso, ttg_aniso, tag_iso, tag_aniso
+    dir: logs/az_engrad/${now:%Y-%m-%d-%H-%M-%S}
+  # launcher:
+  #   n_jobs: 2  # number of parallel jobs
+  # mode: MULTIRUN
+  # sweeper:
+  #   params:
+  #     horizon: 1, 3, 6

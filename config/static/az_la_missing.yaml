@@ -1,12 +1,20 @@
 defaults:
   - benchmarks
   - override dataset: la
+  - override embedding: none
+  # - override hydra/launcher: joblib
 
 hydra:
   run:
     dir: logs/az_la_missing/${model.name}/${dataset.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
     dir: logs/az_la_missing/${now:%Y-%m-%d-%H-%M-%S}
+  # launcher:
+  #   n_jobs: 2  # number of parallel jobs
+  # mode: MULTIRUN
+  # sweeper:
+  #   params:
+  #     model: fcrnn, rnn, ttg_iso, dcrnn, agcrn, gwnet
 
 tags: az_la_missing
 

@@ -1,13 +1,21 @@
 output:
   dir: logs/az_la_missing/
-scorefile: scores_nomask_12d_adjusted.npz # [scores_nomask_12d_adjusted.npz, scores_nomask_1d_adjusted.npz]
-scores: [0.5] # [0.5, mae]
+  prefix: la_
+scorefile: 
+  - scores_adjusted_mv_nomask_12d.npz
+  - scores_nomask_12d_adjusted.npz 
+  # - scores_nomask_1d_adjusted.npz
+  # - scores_adjusted_uv_nomask_1d.npz
+scores: 
+  - 0.5
+  - mae
 plot_params:
   time_plot:
     figsize: [6, 3]
 models:
   uvRNN: logs/az_la_missing/2025-02-12-15-47-34/rnn/la/0
   mvRNN: logs/az_la_missing/2025-02-12-15-47-34/fcrnn/la/1
+  ttgRNN: logs/az_la_missing/ttg_iso/la/2025-03-05/10-19-13
   GWNet: logs/az_la_missing/2025-02-12-15-47-34/gwnet/la/2
   DCRNN: logs/az_la_missing/2025-02-12-15-47-30/dcrnn/la/0
   AGCRN: logs/az_la_missing/2025-02-12-15-47-30/agcrn/la/1

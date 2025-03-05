@@ -1,6 +1,5 @@
 defaults:
   - benchmarks
-  - override embedding: none
   - override model: ttg_iso
   - override dataset: pvwest
 
@@ -21,8 +20,6 @@ az_analysis:
   use_mask: true
   plot_spacetime_scores: true
   node_order: null
-  # time_set: [0, 400]
-  # node_set: [0, 20]
-  # feat_set: [0, 2, 5]
+  time_set: [0, 400]
   feat_set: [0, 2, 5]
   time_filter: 1

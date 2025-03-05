@@ -461,22 +461,30 @@ def run_traffic(cfg: DictConfig):
 
 def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
 
-    T_ = cfg.az_analysis.get("time_set", [0, 400])[-1]
+    T0, T1 = cfg.az_analysis.get("time_set", [0, 400])
+    feat_set = [0] if "uv" in suffix else cfg.az_analysis.get("feat_set", list(range(res.shape[-1])))
+    res_ = res[T0: T1, :, feat_set]
+    mask_ = mask[T0: T1, :, feat_set]
+    # night_ = torch.where((~mask_).any(-1).sum(-1) > res_.shape[1] * .95)[0].numpy()
+    night_ = torch.where((~mask_).all(-1).all(-1))[0].numpy()
+
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
     # night_ = torch.where((y[:T_, :, :, 0]==0).all(-1).all(-1))[0].numpy()
-    night_ = torch.where((~mask[:T_]).all(-1).all(-1))[0].numpy()
+    # night_ = torch.where((~mask[T0: T1]).all(-1).all(-1))[0].numpy()
     warnings = []
     for s in ["time_mae", "time_0.0", "time_0.5", "time_1.0"]:
-        if not np.all(np.isnan(scores["time_mae"][night_])):
+        if not np.all(np.isnan(scores[s][night_])):
             warnings.append(s) 
             scores[s][night_] = np.nan
+            print("WARNING", s)
 
-    # ---------------------------------------------------------------------------------------------------------
+
+    # --- Sign of residuals ------------------------------------------------------------------------------------------------------
 
     plt.figure(figsize=[8, 3])
-    for f_ in cfg.az_analysis.feat_set:
-        plt.plot(scores["time_index"][:T_], torch.mean(res[:T_, :, f_]>0, dtype=float, axis=1), label=f"{f_}-step ahead", color=plt.cm.Set2.colors[f_])
+    for f_ in range(res_.shape[-1]):
+        plt.plot(scores["time_index"], torch.mean(res_[..., f_]>0, dtype=float, axis=1), label=f"{feat_set[f_]}-step ahead", color=plt.cm.Set2.colors[f_])
     # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
     plt.gca().tick_params(axis='x', labelrotation=90)
     plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
@@ -486,157 +494,106 @@ def plot_pvwest_figures(cfg, scores, savepath, mask, res, y, y_hat, suffix):
     plt.savefig(os.path.join(savepath, f"tmp3_{suffix}_positive_res_ratio.pdf"))
     plt.close()
 
-    # ---------------------------------------------------------------------------------------------------------
 
-    figsize = [6, 2.5]
 
-    fig, ax1 = plt.subplots(figsize=figsize)
+    figsize = [5.5, 3]
+    abs_ = (res_ * mask_).abs().mean(-1)
+    abs_[torch.where((~mask_).any(-1))] = torch.nan
 
-    l1 = ax1.plot(scores["time_index"][:T_], scores["time_1.0"], label=f"Score $c_{{1}}(t)$", color=AZ_COLORS[1.0], linestyle="dashdot", linewidth=1.)
-    l0 = ax1.plot(scores["time_index"][:T_], scores["time_0.0"], label=f"Score $c_{{0}}(t)$", color=AZ_COLORS[0.0], linestyle="dashed", linewidth=1.)
-    l5 = ax1.plot(scores["time_index"][:T_], scores["time_0.5"], label=f"Score $c_{{1/2}}(t)$", color=AZ_COLORS[0.5], linestyle="solid", linewidth=1.)
+    f_ = 0 # len(feat_set) - 1
+    signal = y[T0: T1, :, :, 0].mean(1)
 
-    ax2 = ax1.twinx()
-    la = ax2.plot(scores["time_index"][:T_], scores["time_mae"], 
-                    label=f"MAE", color="black", linestyle="solid", linewidth=1.)
-    abs_ = res[:T_, :, cfg.az_analysis.feat_set].abs().mean(-1)
-    abs_[night_] = torch.nan
-    ax2.plot(scores["time_index"][:T_], torch.nanmean(abs_, axis=-1), 
-                    label=f"MAE", color="black", linestyle="dotted", linewidth=1.)
-    ax2.fill_between(scores["time_index"][:T_], 
-                        torch.nanquantile(abs_, .25, axis=-1),
-                        torch.nanquantile(abs_, .75, axis=-1),
-                        color="gray", alpha=.5)
+    fig, axs = plt.subplots(2, 1, figsize=figsize, sharex=True)
 
-    ax1.xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
-    ax1.tick_params(axis='x', labelrotation=90)
 
-    # ax1.set_ylim(top=1.0, bottom= -1)
-    ax1.set_ylabel(r"Scores $c_\lambda(t)$")
-    ax1.tick_params(axis='y', labelcolor=AZ_COLORS[0.5])    
-    ax1.grid()    
+
+    # --- Scores and MAE -----------------------------------------------------------------------------------------------------
+    
+    l1 = axs[0].plot(scores["time_index"], scores["time_1.0"], label=f"Score $c_{{1}}(t)$", color=AZ_COLORS[1.0], linestyle="dashdot", linewidth=1.)
+    l0 = axs[0].plot(scores["time_index"], scores["time_0.0"], label=f"Score $c_{{0}}(t)$", color=AZ_COLORS[0.0], linestyle="dashed", linewidth=1.)
+    l5 = axs[0].plot(scores["time_index"], scores["time_0.5"], label=f"Score $c_{{1/2}}(t)$", color=AZ_COLORS[0.5], linestyle="solid", linewidth=1.)
+
+    ax0b = axs[0].twinx()
+    la = ax0b.plot(scores["time_index"], scores["time_mae"], 
+                    label=f"MAE", linestyle="solid", color="gray", alpha=0.8, linewidth=1.)
+
+    # axs[0].xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
+    # axs[0].tick_params(axis='x', labelrotation=90)
+
+    # axs[0].set_ylim(top=1.0, bottom= -1)
+    axs[0].set_ylabel(r"Scores $c_\lambda(t)$")
+    # axs[0].tick_params(axis='y', labelcolor=AZ_COLORS[0.5])    
+    axs[0].grid()    
     
     # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    ax2.set_ylim(bottom=0.0)
+    # ax0b.set_ylim(bottom=0.0)
     # ax2.set_xticks()
-    ax2.set_ylabel(f"MAE")
-    ax2.tick_params(axis='y', labelcolor="black")       
+    ax0b.set_ylabel(f"MAE")
+    ax0b.yaxis.label.set_color("gray")
+    ax0b.tick_params(axis='y', labelcolor="gray")       
 
     lns = l1 + l5 + l0 + la
     labs = [l.get_label() for l in lns]
-    ax2.legend(lns, labs, loc=0)
+    ax0b.legend(lns, labs, loc=0)
 
     # plt.legend()
     # plt.grid()
-    plt.tight_layout()
-    plt.savefig(os.path.join(savepath, f"tmp4.2_{suffix}_score_mae.pdf"))
-    plt.close()
+    # plt.tight_layout()
+    # plt.savefig(os.path.join(savepath, f"tmp4.2_{suffix}_score_mae.pdf"))
+    # plt.close()
 
-    # ---------------------------------------------------------------------------------------------------------
+    # --- Relative Error ------------------------------------------------------------------------------------------------------
+
 
     # plt.figure(figsize=[8, 3])
     # Create some mock data
-    fig, ax1 = plt.subplots(figsize=[10, 2.5])
+    # fig, ax1 = plt.subplots(figsize=figsize)
     # fig, ax1 = plt.subplots(figsize=[6, 2.5])
-
-    lm = ax1.plot(scores["time_index"][:T_], y[:T_, f_, :, 0].mean(axis=-1), label=f"Target $\mathbf y_{{t+{f_+1}}}$", color="black", 
+    lm = axs[1].plot(scores["time_index"], signal.mean(axis=-1), label=f"Target $\mathbf y_{{t+{feat_set[f_]+1}}}$", color="darkgoldenrod", 
                     linestyle="solid", linewidth=1.)
-    ax1.fill_between(scores["time_index"][:T_], 
-                        torch.quantile(y[:T_, f_, :, 0], .25, axis=-1),
-                        torch.quantile(y[:T_, f_, :, 0], .75, axis=-1),
-                    color="gray", alpha=.5)        
-    ax2 = ax1.twinx()  # instantiate a second Axes that shares the same x-axis
+    axs[1].fill_between(scores["time_index"], 
+                        torch.quantile(signal, .25, axis=-1),
+                        torch.quantile(signal, .75, axis=-1),
+                    color="goldenrod", alpha=.5)        
+    ax1b = axs[1].twinx()  # instantiate a second Axes that shares the same x-axis
     # ax2.plot(time_index[:T_], az_scores_adj["time_mae"], label=f"MAE", color="black", 
     #             #   linestyle="solid", linewidth=2.0, alpha=.6)
     #               linestyle="solid", color="gray")
                 #   linestyle="solid", linewidth=0.5)
-    lr = ax2.plot(scores["time_index"][:T_], torch.nanmean(torch.where(y[:T_, f_, :, 0] > 1e-4, 100 * torch.abs(res[:T_, :, f_]) / y[:T_, f_, :, 0], torch.nan), axis=-1), 
-                    label=f"MAPE", color="black", linestyle="dashed", linewidth=1.)
+    # rel_err = torch.nanmean(torch.where(y[T0: T1, feat_set[f_], :, 0] > 1e-4, 100 * torch.abs(res[T0: T1, :, f_]) / y[T0: T1, f_, :, 0]
+    # lr = ax2.plot(scores["time_index"][T0: T1], torch.nanmean(torch.where(y[T0: T1, feat_set[f_], :, 0] > 1e-4, 100 * torch.abs(res[T0: T1, :, f_]) / y[T0: T1, f_, :, 0], torch.nan), axis=-1), 
+    #                 label=f"MAPE", color="black", linestyle="dashed", linewidth=1.)
+    rel_error = 100 * abs_ / signal
+    lr = ax1b.semilogy(scores["time_index"], torch.nanmean(rel_error, axis=-1), 
+                    label=f"MAPE", color="gray", linestyle="dashed", linewidth=1.)
 
-    ax1.xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
-    ax1.tick_params(axis='x', labelrotation=90)
+    axs[1].xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))        
+    axs[1].tick_params(axis='x', labelrotation=90)
 
-    ax1.set_ylim(bottom=0)
-    ax1.set_ylabel("Target value")
+    axs[1].set_ylim(bottom=0)
+    axs[1].set_ylabel("Target value")
+    axs[1].yaxis.label.set_color("darkgoldenrod")
+    axs[1].tick_params(axis='y', labelcolor="darkgoldenrod")   
     # ax1.tick_params(axis='y', labelcolor=AZ_COLORS[0.5])    
-    ax1.grid()    
+    axs[1].grid()    
     
     # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    ax2.set_ylim(bottom=0.0, top=300)
+    ax1b.set_ylim(bottom=0.0) #, top=300)
     # ax2.set_xticks()
-    ax2.set_ylabel(f"MAPE (\%)")
-    ax2.tick_params(axis='y', labelcolor="black")       
+    ax1b.set_ylabel(f"MAPE (\%)")
+    ax1b.yaxis.label.set_color("gray")
+    ax1b.tick_params(axis='y', labelcolor="gray")       
 
     lns = lm + lr
     labs = [l.get_label() for l in lns]
-    ax2.legend(lns, labs, loc=0)
+    ax1b.legend(lns, labs, loc="upper center")
 
     # plt.legend()
     # plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(savepath, f"tmp4.2_{suffix}_relerror.pdf"))
+    plt.savefig(os.path.join(savepath, f"tmp4.2b_{suffix}.pdf"))
     plt.close()
 
-    # ---------------------------------------------------------------------------------------------------------
-
-    plt.figure(figsize=[8, 3])
-    # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
-    # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
-    f_ = 2
-    for i_ in range(5):
-        plt.plot(scores["time_index"][:T_], y_hat[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Set1.colors[i_])
-        plt.plot(scores["time_index"][:T_], y[:T_, f_, 20*i_, 0], label=f"node {i_} - {f_}-step ahead", color=plt.cm.Pastel1.colors[i_], linestyle="dashed")
-
-    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    plt.gca().tick_params(axis='x', labelrotation=90)
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig(os.path.join(savepath, f"tmp5_{suffix}_3days_forecasts.pdf"))
-    plt.close()
-
-    # ---------------------------------------------------------------------------------------------------------
-
-    plt.figure(figsize=[8, 3])
-    # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
-    # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
-    f_ = 2
-    T_min, T_max = 30, 120
-    for i_ in range(8):
-        mul = 81
-        plt.plot(scores["time_index"][T_min:T_max], y_hat[T_min:T_max, f_, mul*i_, 0], label=f"y_hat[{mul*i_}]", color=plt.cm.Set1.colors[i_])
-        plt.plot(scores["time_index"][T_min:T_max], y[T_min:T_max, f_, mul*i_, 0], label=f"y[{mul*i_}]", color=plt.cm.Pastel1.colors[i_], linestyle="dashed")
-
-    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    plt.gca().tick_params(axis='x', labelrotation=90)
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
-    # plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig(os.path.join(savepath, f"tmp6_{suffix}_1day_forecast.pdf"))
-    plt.close()
-
-    # ---------------------------------------------------------------------------------------------------------
-
-    plt.figure(figsize=[8, 3])
-    # plt.plot(time_index[:T_], y[:T_, 2, ::200, 0])
-    # plt.plot(time_index[:T_], y_hat[:T_, 2, ::200, 0], linestyle="dashed")
-    f_ = 2
-    T_min, T_max = 106, 130
-    T_min, T_max = 130, 180
-    for i_ in range(5):
-        q = i_ * .2 + .1
-        plt.plot(scores["time_index"][T_min:T_max], torch.quantile(res[T_min:T_max, :, f_], q, axis=1), label=f"{int(q*100)}\%", color=plt.cm.Set1.colors[i_])
-
-    # plt.plot(torch.mean(res[:T_, :, [0,2,5]]>0, dtype=float, axis=1))       
-    plt.gca().tick_params(axis='x', labelrotation=90)
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=(0, 3, 6, 9, 12, 15, 18, 21)))
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig(os.path.join(savepath, f"tmp7_{suffix}_night_residuals.pdf"))
-    plt.close()
 
 
 if __name__ == '__main__':
